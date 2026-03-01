@@ -122,8 +122,6 @@ logs/
 ####################
 .idea/*
 /.env.local
-.DS_Store
-Thumbs.db
 
 # Ensure Git keeps these directories if empty (uncomment if needed)
 # !/backend/migrations
