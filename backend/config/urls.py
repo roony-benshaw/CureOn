@@ -22,5 +22,6 @@ from accounts.views import SendCredentialsView
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/", include("accounts.urls")),
+    path("api/appointments/", include("appointments.urls")),
     path("api/send-credentials", SendCredentialsView.as_view()),
 ]

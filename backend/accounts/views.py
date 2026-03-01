@@ -105,6 +105,17 @@ class UsersListView(generics.ListAPIView):
             qs = qs.filter(role=role.upper())
         return qs
 
+class DoctorsPublicListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ExtendedUserSerializer
+
+    def get_queryset(self):
+        specialization = self.request.query_params.get('specialization')
+        qs = User.objects.filter(role=User.Role.DOCTOR).order_by('username')
+        if specialization:
+            qs = qs.filter(doctor_profile__specialization__iexact=specialization)
+        return qs
+
 class AdminUserUpdateView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAdmin]
     queryset = User.objects.all()

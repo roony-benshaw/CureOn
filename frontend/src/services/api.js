@@ -93,6 +93,12 @@ export const userService = {
     });
     return response.data;
   },
+  listDoctors: async (specialization) => {
+    const response = await api.get('/doctors/', {
+      params: specialization ? { specialization } : undefined,
+    });
+    return response.data;
+  },
   update: async (id, payload) => {
     const response = await api.patch(`/users/${id}/`, payload);
     return response.data;
@@ -101,6 +107,127 @@ export const userService = {
     const response = await api.delete(`/users/${id}/`);
     return response.status === 204;
   }
+};
+
+// Appointments API instance
+const appointmentsApi = axios.create({
+  baseURL: 'http://127.0.0.1:8000/api/appointments',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+appointmentsApi.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+appointmentsApi.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      const refreshToken = localStorage.getItem('refresh_token');
+      if (refreshToken) {
+        try {
+          const response = await axios.post('http://127.0.0.1:8000/api/auth/token/refresh/', {
+            refresh: refreshToken,
+          });
+          const { access } = response.data;
+          localStorage.setItem('access_token', access);
+          originalRequest.headers['Authorization'] = `Bearer ${access}`;
+          return appointmentsApi(originalRequest);
+        } catch (refreshError) {
+          console.error("Token refresh failed", refreshError);
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          window.location.href = '/login';
+          return Promise.reject(refreshError);
+        }
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+export const appointmentsService = {
+  // General / Patient
+  getAvailableSlots: async (doctorId, date) => {
+    const response = await appointmentsApi.get('/available-slots/', {
+      params: { doctor_id: doctorId, date },
+    });
+    return response.data;
+  },
+  book: async ({ doctor_id, date, time_slot, visit_type }) => {
+    const response = await appointmentsApi.post('/book/', { doctor_id, date, time_slot, visit_type });
+    return response.data;
+  },
+  myAppointments: async (status) => {
+    const response = await appointmentsApi.get('/mine/', {
+      params: status ? { status } : undefined,
+    });
+    return response.data;
+  },
+  cancel: async (appointmentId) => {
+    const response = await appointmentsApi.post(`/${appointmentId}/cancel/`);
+    return response.data;
+  },
+  requestReschedule: async (appointmentId, requested_date, requested_time_slot) => {
+    const response = await appointmentsApi.post(`/${appointmentId}/reschedule-request/`, {
+      requested_date,
+      requested_time_slot,
+    });
+    return response.data;
+  },
+
+  // Doctor
+  doctorAvailability: {
+    list: async () => {
+      const response = await appointmentsApi.get('/availability/');
+      return response.data;
+    },
+    add: async ({ weekday, start_time, end_time }) => {
+      const response = await appointmentsApi.post('/availability/', { weekday, start_time, end_time });
+      return response.data;
+    },
+    remove: async ({ weekday, start_time, end_time }) => {
+      const response = await appointmentsApi.delete('/availability/', {
+        data: { weekday, start_time, end_time },
+      });
+      return response.status === 204;
+    },
+  },
+  doctorAppointments: async (status) => {
+    const response = await appointmentsApi.get('/doctor/', {
+      params: status ? { status } : undefined,
+    });
+    return response.data;
+  },
+  doctorUpdateStatus: async (appointmentId, status) => {
+    const response = await appointmentsApi.post(`/${appointmentId}/status/`, { status });
+    return response.data;
+  },
+
+  // Admin
+  adminAll: async () => {
+    const response = await appointmentsApi.get('/admin/all/');
+    return response.data;
+  },
+  adminRescheduleDecision: async (appointmentId, decision) => {
+    const response = await appointmentsApi.post(`/${appointmentId}/reschedule-decision/`, { decision });
+    return response.data;
+  },
+  adminCancel: async (appointmentId) => {
+    const response = await appointmentsApi.post(`/${appointmentId}/admin-cancel/`);
+    return response.data;
+  },
 };
 
 export default api;

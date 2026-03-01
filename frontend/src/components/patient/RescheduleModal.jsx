@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -20,21 +20,9 @@ import { format } from "date-fns";
 import { enUS, hi, te } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
+import { appointmentsService } from "@/services/api";
 
-const timeSlots = [
-  "9:00 AM",
-  "9:30 AM",
-  "10:00 AM",
-  "10:30 AM",
-  "11:00 AM",
-  "11:30 AM",
-  "2:00 PM",
-  "2:30 PM",
-  "3:00 PM",
-  "3:30 PM",
-  "4:00 PM",
-  "4:30 PM",
-];
+const timeSlots = [];
 
 const RescheduleModal = ({
   open,
@@ -43,8 +31,14 @@ const RescheduleModal = ({
   onConfirm,
 }) => {
   const { t, i18n } = useTranslation();
+  const i18nText = (key, fallback) => {
+    const val = t(key);
+    return val === key ? fallback : val;
+  };
   const [selectedDate, setSelectedDate] = useState(undefined);
   const [selectedTime, setSelectedTime] = useState("");
+  const [slots, setSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
   const getDateLocale = () => {
     switch (i18n.language) {
@@ -68,6 +62,26 @@ const RescheduleModal = ({
     setSelectedTime("");
     onOpenChange(false);
   };
+
+  useEffect(() => {
+    const loadSlots = async () => {
+      if (appointmentDetails?.doctorId && selectedDate) {
+        setLoadingSlots(true);
+        try {
+          const dateStr = format(selectedDate, "yyyy-MM-dd", { locale: getDateLocale() });
+          const res = await appointmentsService.getAvailableSlots(appointmentDetails.doctorId, dateStr);
+          setSlots(res.slots || []);
+        } catch {
+          setSlots([]);
+        } finally {
+          setLoadingSlots(false);
+        }
+      } else {
+        setSlots([]);
+      }
+    };
+    loadSlots();
+  }, [appointmentDetails?.doctorId, selectedDate]);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -94,7 +108,7 @@ const RescheduleModal = ({
 
           {/* Date Selection */}
           <div className="space-y-2">
-            <Label>{t('common.selectNewDate')}</Label>
+            <Label>{i18nText('common.selectNewDate', 'Select New Date')}</Label>
             <Calendar
               mode="single"
               selected={selectedDate}
@@ -106,11 +120,13 @@ const RescheduleModal = ({
 
           {/* Time Selection */}
           <div className="space-y-2">
-            <Label>{t('common.selectNewTime')}</Label>
+            <Label>{i18nText('common.selectNewTime', 'Select New Time')}</Label>
             <Select value={selectedTime} onValueChange={setSelectedTime}>
               <SelectTrigger>
-                <SelectValue placeholder={t('common.selectTimeSlot')}>
-                  {selectedTime && (
+                <SelectValue placeholder={i18nText('common.selectTimeSlot', 'Select Time Slot')}>
+                  {loadingSlots ? (
+                    <span className="text-muted-foreground">{i18nText('common.loading', 'Loading...')}</span>
+                  ) : selectedTime && (
                     <span className="flex items-center gap-2">
                       <Clock className="w-4 h-4" />
                       {selectedTime}
@@ -119,11 +135,15 @@ const RescheduleModal = ({
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {timeSlots.map((time) => (
-                  <SelectItem key={time} value={time}>
-                    {time}
-                  </SelectItem>
-                ))}
+                {slots.length > 0 ? (
+                  slots.map((time) => (
+                    <SelectItem key={time} value={time}>
+                      {time}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem disabled value="no-slots">{i18nText('common.noSlots', 'No slots available')}</SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>

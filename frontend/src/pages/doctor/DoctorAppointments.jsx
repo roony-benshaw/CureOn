@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import AppointmentCard from "@/components/dashboard/AppointmentCard";
-import RescheduleModal from "@/components/patient/RescheduleModal";
 import PrescriptionModal from "@/components/doctor/PrescriptionModal";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -25,95 +24,48 @@ const navItems = [
 ];
 
 const DoctorAppointments = () => {
-  const [rescheduleOpen, setRescheduleOpen] = useState(false);
-  const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [selectedPrescriptionAppointment, setSelectedPrescriptionAppointment] = useState(null);
 
-  const [appointments, setAppointments] = useState([
-    {
-      id: 1,
-      patientName: "Emily Rodriguez",
-      date: "Today",
-      time: "10:00 AM",
-      type: "video",
-      status: "upcoming",
-      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80",
-    },
-    {
-      id: 2,
-      patientName: "James Wilson",
-      date: "Today",
-      time: "11:30 AM",
-      type: "in-person",
-      status: "upcoming",
-    },
-    {
-      id: 3,
-      patientName: "Sarah Chen",
-      date: "Today",
-      time: "2:00 PM",
-      type: "video",
-      status: "upcoming",
-      avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80",
-    },
-    {
-      id: 4,
-      patientName: "Michael Brown",
-      date: "Jan 26, 2026",
-      time: "9:00 AM",
-      type: "in-person",
-      status: "upcoming",
-    },
-    {
-      id: 5,
-      patientName: "Lisa Anderson",
-      date: "Jan 27, 2026",
-      time: "10:30 AM",
-      type: "video",
-      status: "upcoming",
-    },
-    {
-      id: 6,
-      patientName: "David Martinez",
-      date: "Jan 28, 2026",
-      time: "2:00 PM",
-      type: "in-person",
-      status: "upcoming",
-    },
-    {
-      id: 7,
-      patientName: "Jennifer Smith",
-      date: "Jan 20, 2026",
-      time: "10:00 AM",
-      type: "video",
-      status: "completed",
-    },
-    {
-      id: 8,
-      patientName: "Robert Johnson",
-      date: "Jan 19, 2026",
-      time: "3:00 PM",
-      type: "in-person",
-      status: "completed",
-    },
-    {
-      id: 9,
-      patientName: "Amanda White",
-      date: "Jan 18, 2026",
-      time: "11:00 AM",
-      type: "video",
-      status: "completed",
-    },
-    {
-      id: 10,
-      patientName: "Thomas Lee",
-      date: "Jan 22, 2026",
-      time: "1:00 PM",
-      type: "video",
-      status: "cancelled",
-    },
-  ]);
+  const [appointments, setAppointments] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const mapStatus = (s) => {
+    switch (s) {
+      case "UPCOMING": return "upcoming";
+      case "COMPLETED": return "completed";
+      case "CANCELLED": return "cancelled";
+      default: return "upcoming";
+    }
+  };
+
+  const mapType = (t) => t === "IN_PERSON" ? "in-person" : "video";
+
+  const loadAppointments = async () => {
+    setLoading(true);
+    try {
+      const { appointmentsService } = await import("@/services/api");
+      const res = await appointmentsService.doctorAppointments();
+      const items = (res || []).map((a) => ({
+        id: a.id,
+        patientName: a.patient_name || "Patient",
+        date: format(new Date(a.date), "PP"),
+        rawDate: new Date(a.date),
+        time: a.time_slot,
+        type: mapType(a.visit_type),
+        status: mapStatus(a.status),
+      }));
+      setAppointments(items);
+    } catch {
+      setAppointments([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAppointments();
+  }, []);
 
   const handleJoinCall = (appointment) => {
     toast.success(`Starting video call with ${appointment.patientName}`);
@@ -122,30 +74,23 @@ const DoctorAppointments = () => {
   };
 
   const handleCancel = (appointment) => {
-    setAppointments(prev => prev.map(app => 
-      app.id === appointment.id ? { ...app, status: 'cancelled' } : app
-    ));
-    toast.error(`Appointment with ${appointment.patientName} cancelled`);
-  };
-
-  const handleReschedule = (appointment) => {
-    setSelectedAppointment({
-      ...appointment,
-      currentDate: appointment.date,
-      currentTime: appointment.time,
+    import("@/services/api").then(async ({ appointmentsService }) => {
+      try {
+        await appointmentsService.doctorUpdateStatus(appointment.id, "CANCELLED");
+        toast.error(`Appointment with ${appointment.patientName} cancelled`);
+        loadAppointments();
+      } catch {}
     });
-    setRescheduleOpen(true);
   };
 
-  const handleRescheduleConfirm = (newDate, newTime) => {
-    const formattedDate = format(newDate, "MMM d, yyyy");
-    setAppointments(prev => prev.map(app => 
-      app.id === selectedAppointment.id 
-        ? { ...app, date: formattedDate, time: newTime, status: 'upcoming' } 
-        : app
-    ));
-    toast.success("Appointment rescheduled successfully");
-    setRescheduleOpen(false);
+  const handleComplete = (appointment) => {
+    import("@/services/api").then(async ({ appointmentsService }) => {
+      try {
+        await appointmentsService.doctorUpdateStatus(appointment.id, "COMPLETED");
+        toast.success("Marked as completed");
+        loadAppointments();
+      } catch {}
+    });
   };
 
   const handlePrescribe = (appointment) => {
@@ -153,8 +98,13 @@ const DoctorAppointments = () => {
     setPrescriptionModalOpen(true);
   };
 
-  const todayAppointments = appointments.filter(app => app.date === "Today" && app.status !== 'cancelled');
-  const upcomingAppointments = appointments.filter(app => app.date !== "Today" && app.status === 'upcoming');
+  const today = new Date();
+  const isToday = (d) =>
+    d.getDate() === today.getDate() &&
+    d.getMonth() === today.getMonth() &&
+    d.getFullYear() === today.getFullYear();
+  const todayAppointments = appointments.filter(app => isToday(app.rawDate) && app.status !== 'cancelled');
+  const upcomingAppointments = appointments.filter(app => !isToday(app.rawDate) && app.status === 'upcoming');
   const completedAppointments = appointments.filter(app => app.status === 'completed');
   const cancelledAppointments = appointments.filter(app => app.status === 'cancelled');
 
@@ -200,7 +150,6 @@ const DoctorAppointments = () => {
                     {...appointment}
                     userType="doctor"
                     onJoin={() => handleJoinCall(appointment)}
-                    onReschedule={() => handleReschedule(appointment)}
                     onCancel={() => handleCancel(appointment)}
                   />
                 ))
@@ -222,7 +171,6 @@ const DoctorAppointments = () => {
                   {...appointment}
                   userType="doctor"
                   onJoin={() => handleJoinCall(appointment)}
-                  onReschedule={() => handleReschedule(appointment)}
                   onCancel={() => handleCancel(appointment)}
                 />
               ))}
@@ -269,14 +217,6 @@ const DoctorAppointments = () => {
           </TabsContent>
         </Tabs>
       </div>
-      {/* Reschedule Modal */}
-      <RescheduleModal
-        open={rescheduleOpen}
-        onOpenChange={setRescheduleOpen}
-        appointmentDetails={selectedAppointment}
-        onConfirm={handleRescheduleConfirm}
-      />
-
       <PrescriptionModal
         open={prescriptionModalOpen}
         onOpenChange={setPrescriptionModalOpen}

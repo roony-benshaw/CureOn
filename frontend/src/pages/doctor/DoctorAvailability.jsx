@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { appointmentsService } from "@/services/api";
 
 const navItems = [
   { name: "Dashboard", href: "/doctor/dashboard", icon: LayoutDashboard },
@@ -31,20 +32,52 @@ const navItems = [
 ];
 
 const DoctorAvailability = () => {
-  const [schedule, setSchedule] = useState([
-    { day: "Monday", enabled: true, slots: [{ id: "1", start: "09:00", end: "12:00" }, { id: "2", start: "14:00", end: "17:00" }] },
-    { day: "Tuesday", enabled: true, slots: [{ id: "3", start: "09:00", end: "12:00" }, { id: "4", start: "14:00", end: "17:00" }] },
-    { day: "Wednesday", enabled: true, slots: [{ id: "5", start: "09:00", end: "12:00" }] },
-    { day: "Thursday", enabled: true, slots: [{ id: "6", start: "09:00", end: "12:00" }, { id: "7", start: "14:00", end: "17:00" }] },
-    { day: "Friday", enabled: true, slots: [{ id: "8", start: "09:00", end: "12:00" }] },
-    { day: "Saturday", enabled: false, slots: [] },
-    { day: "Sunday", enabled: false, slots: [] },
-  ]);
+  const weekdays = [
+    { name: "Monday", index: 0 },
+    { name: "Tuesday", index: 1 },
+    { name: "Wednesday", index: 2 },
+    { name: "Thursday", index: 3 },
+    { name: "Friday", index: 4 },
+    { name: "Saturday", index: 5 },
+    { name: "Sunday", index: 6 },
+  ];
+  const [schedule, setSchedule] = useState(
+    weekdays.map((w) => ({ day: w.name, enabled: false, slots: [] }))
+  );
+  const [loading, setLoading] = useState(false);
+  const [initialBackendRanges, setInitialBackendRanges] = useState([]);
 
   const timeOptions = [
     "07:00", "08:00", "09:00", "10:00", "11:00", "12:00",
     "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00",
   ];
+
+  const loadFromBackend = async () => {
+    setLoading(true);
+    try {
+      const ranges = await appointmentsService.doctorAvailability.list();
+      setInitialBackendRanges(ranges);
+      const next = weekdays.map((w) => {
+        const slots = ranges
+          .filter((r) => r.weekday === w.index)
+          .map((r) => ({
+            id: `${w.index}-${r.start_time}-${r.end_time}`,
+            start: r.start_time.slice(0, 5),
+            end: r.end_time.slice(0, 5),
+          }));
+        return { day: w.name, enabled: slots.length > 0, slots };
+      });
+      setSchedule(next);
+    } catch {
+      // leave defaults
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadFromBackend();
+  }, []);
 
   const toggleDay = (dayIndex) => {
     setSchedule((prev) =>
@@ -93,7 +126,54 @@ const DoctorAvailability = () => {
   };
 
   const handleSave = () => {
-    toast.success("Availability schedule updated successfully");
+    const sync = async () => {
+      setLoading(true);
+      try {
+        // Fetch latest from backend to compare
+        const current = await appointmentsService.doctorAvailability.list();
+
+        // Build desired slots map from UI
+        const desired = [];
+        schedule.forEach((d, idx) => {
+          const weekday = weekdays[idx].index;
+          if (d.enabled) {
+            d.slots.forEach((s) => {
+              desired.push({ weekday, start_time: s.start, end_time: s.end });
+            });
+          }
+        });
+
+        // Delete those present in backend but not in desired, or for disabled days
+        for (const r of current) {
+          const exists = desired.some(
+            (d) =>
+              d.weekday === r.weekday &&
+              d.start_time === r.start_time.slice(0, 5) &&
+              d.end_time === r.end_time.slice(0, 5)
+          );
+          if (!exists) {
+            await appointmentsService.doctorAvailability.remove({
+              weekday: r.weekday,
+              start_time: r.start_time,
+              end_time: r.end_time,
+            });
+          }
+        }
+
+        // Add desired slots (get_or_create prevents duplicates)
+        for (const d of desired) {
+          await appointmentsService.doctorAvailability.add(d);
+        }
+
+        toast.success("Availability schedule updated successfully");
+        loadFromBackend();
+      } catch (e) {
+        toast.error("Failed to update availability");
+      } finally {
+        setLoading(false);
+      }
+    };
+    sync();
   };
 
   return (
@@ -112,7 +192,7 @@ const DoctorAvailability = () => {
               Set your available days and time slots for appointments
             </p>
           </div>
-          <Button variant="hero" onClick={handleSave}>
+          <Button variant="hero" onClick={handleSave} disabled={loading}>
             <Save className="w-5 h-5" />
             Save Changes
           </Button>

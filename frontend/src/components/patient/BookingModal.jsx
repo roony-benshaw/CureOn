@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -14,12 +14,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Heart, Brain, Bone, Stethoscope, Eye, Baby, Smile, Clock } from "lucide-react";
+import { Heart, Brain, Bone, Stethoscope, Eye, Baby, Smile, Clock, Video, MapPin } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { format } from "date-fns";
 import { enUS, hi, te } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
+import { appointmentsService, userService } from "@/services/api";
 
 const specializations = [
   { id: "general", name: "General Physician", icon: Stethoscope, description: "For general health checkups" },
@@ -31,29 +32,23 @@ const specializations = [
   { id: "derma", name: "Dermatologist", icon: Smile, description: "Skin care specialist" },
 ];
 
-const timeSlots = [
-  "9:00 AM",
-  "9:30 AM",
-  "10:00 AM",
-  "10:30 AM",
-  "11:00 AM",
-  "11:30 AM",
-  "2:00 PM",
-  "2:30 PM",
-  "3:00 PM",
-  "3:30 PM",
-  "4:00 PM",
-  "4:30 PM",
-];
-
 const BookingModal = ({ open, onOpenChange, onBookingConfirmed }) => {
   const { t, i18n } = useTranslation();
+  const i18nText = (key, fallback) => {
+    const val = t(key);
+    return val === key ? fallback : val;
+  };
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     specialization: "",
+    doctorId: null,
     date: undefined,
     time: "",
+    visitType: "VIDEO_CALL",
   });
+  const [doctors, setDoctors] = useState([]);
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
   const getDateLocale = () => {
     switch (i18n.language) {
@@ -65,23 +60,60 @@ const BookingModal = ({ open, onOpenChange, onBookingConfirmed }) => {
 
   const handleSpecializationSelect = (id) => {
     setFormData((prev) => ({ ...prev, specialization: id }));
+    const spec = specializations.find((s) => s.id === id);
+    const query = spec?.name || id;
+    userService.listDoctors(query).then(setDoctors).catch(() => setDoctors([]));
     setStep(2);
   };
 
+  const handleDoctorSelect = (doctorId) => {
+    setFormData((prev) => ({ ...prev, doctorId }));
+  };
+
+  useEffect(() => {
+    const loadSlots = async () => {
+      if (formData.doctorId && formData.date) {
+        setLoadingSlots(true);
+        try {
+          const dateStr = format(formData.date, "yyyy-MM-dd");
+          const res = await appointmentsService.getAvailableSlots(formData.doctorId, dateStr);
+          setAvailableSlots(res.slots || []);
+        } catch {
+          setAvailableSlots([]);
+        } finally {
+          setLoadingSlots(false);
+        }
+      } else {
+        setAvailableSlots([]);
+      }
+    };
+    loadSlots();
+  }, [formData.doctorId, formData.date]);
+
   const handleSubmit = () => {
-    if (formData.date && formData.time && onBookingConfirmed) {
-      onBookingConfirmed({
-        specialization: formData.specialization,
-        date: formData.date,
-        time: formData.time,
-      });
+    if (formData.date && formData.time && formData.doctorId) {
+      const payload = {
+        doctor_id: formData.doctorId,
+        date: format(formData.date, "yyyy-MM-dd"),
+        time_slot: formData.time,
+        visit_type: formData.visitType,
+      };
+      appointmentsService.book(payload)
+        .then((data) => {
+          onBookingConfirmed && onBookingConfirmed(data);
+        })
+        .catch(() => {
+          // ignore, UI toasts can be added
+        });
     }
     // Reset form and close modal
     setStep(1);
     setFormData({
       specialization: "",
+      doctorId: null,
       date: undefined,
       time: "",
+      visitType: "VIDEO_CALL",
     });
     onOpenChange(false);
   };
@@ -96,8 +128,10 @@ const BookingModal = ({ open, onOpenChange, onBookingConfirmed }) => {
     setStep(1);
     setFormData({
       specialization: "",
+      doctorId: null,
       date: undefined,
       time: "",
+      visitType: "VIDEO_CALL",
     });
     onOpenChange(false);
   };
@@ -109,14 +143,14 @@ const BookingModal = ({ open, onOpenChange, onBookingConfirmed }) => {
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display text-xl">
-            {step === 1 ? t('common.selectDoctorType') : t('common.chooseDateTime')}
+            {step === 1 ? i18nText('common.selectDoctorType', 'Select Doctor Type') : i18nText('common.chooseDateTime', 'Choose Date & Time')}
           </DialogTitle>
         </DialogHeader>
 
         {step === 1 ? (
           <div className="py-4">
             <p className="text-muted-foreground mb-6">
-              {t('common.chooseDoctorDesc')}
+              {i18nText('common.chooseDoctorDesc', 'Choose the type of doctor you need')}
             </p>
             <div className="grid sm:grid-cols-2 gap-4">
               {specializations.map((spec) => (
@@ -150,14 +184,38 @@ const BookingModal = ({ open, onOpenChange, onBookingConfirmed }) => {
                 <selectedSpec.icon className="w-5 h-5 text-primary" />
                 <span className="font-medium text-foreground">{t(`appointments.specialties.${selectedSpec.id}`)}</span>
                 <Button variant="ghost" size="sm" className="ml-auto" onClick={handleBack}>
-                  {t('common.change') || "Change"}
+                      {i18nText('common.change', 'Change')}
                 </Button>
               </div>
             )}
 
+            {/* Choose Doctor */}
+            <div className="space-y-2">
+              <Label>{i18nText('common.selectDoctor', 'Select Doctor')}</Label>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {doctors.map((doc) => (
+                  <button
+                    key={doc.id}
+                    onClick={() => handleDoctorSelect(doc.id)}
+                    className={`p-3 rounded-lg border text-left transition ${
+                      formData.doctorId === doc.id ? "border-primary bg-primary/5" : "border-border hover:border-primary"
+                    }`}
+                  >
+                    <div className="font-medium text-foreground">
+                      {(doc.first_name || doc.last_name) ? `${doc.first_name || ''} ${doc.last_name || ''}`.trim() : doc.username}
+                    </div>
+                    <div className="text-xs text-muted-foreground">{doc.specialization || t('appointments.specialties.availableDoctor')}</div>
+                  </button>
+                ))}
+                {doctors.length === 0 && (
+                  <div className="text-sm text-muted-foreground">{t('common.noDoctorsFound') || "No doctors found for this type"}</div>
+                )}
+              </div>
+            </div>
+
             {/* Date Selection */}
             <div className="space-y-2">
-              <Label>{t('common.selectDate')}</Label>
+              <Label>{i18nText('common.selectDate', 'Select Date')}</Label>
               <Calendar
                 mode="single"
                 selected={formData.date}
@@ -167,16 +225,18 @@ const BookingModal = ({ open, onOpenChange, onBookingConfirmed }) => {
               />
             </div>
 
-            {/* Time Selection */}
+            {/* Time Selection (from availability) */}
             <div className="space-y-2">
-              <Label>{t('common.selectTimeSlot')}</Label>
+              <Label>{i18nText('common.selectTimeSlot', 'Select Time Slot')}</Label>
               <Select
                 value={formData.time}
                 onValueChange={(value) => setFormData((prev) => ({ ...prev, time: value }))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder={t('common.selectTimeSlot')}>
-                    {formData.time && (
+                  <SelectValue placeholder={i18nText('common.selectTimeSlot', 'Select Time Slot')}>
+                    {loadingSlots ? (
+                      <span className="text-muted-foreground">{i18nText('common.loading', 'Loading...')}</span>
+                    ) : formData.time && (
                       <span className="flex items-center gap-2">
                         <Clock className="w-4 h-4" />
                         {formData.time}
@@ -185,23 +245,49 @@ const BookingModal = ({ open, onOpenChange, onBookingConfirmed }) => {
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {timeSlots.map((time) => (
-                    <SelectItem key={time} value={time}>
-                      {time}
-                    </SelectItem>
-                  ))}
+                  {(availableSlots || []).length > 0 ? (
+                    (availableSlots || []).map((time) => (
+                      <SelectItem key={time} value={time}>
+                        {time}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem disabled value="no-slots">{i18nText('common.noSlots', 'No slots available')}</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Visit Type */}
+            <div className="space-y-2">
+              <Label>{i18nText('common.visitType', 'Visit Type')}</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  className={`p-3 rounded-lg border flex items-center gap-2 ${formData.visitType === "VIDEO_CALL" ? "border-primary bg-primary/5" : "border-border"}`}
+                  onClick={() => setFormData((p) => ({ ...p, visitType: "VIDEO_CALL" }))}
+                >
+                  <Video className="w-4 h-4 text-primary" />
+                  <span>Video Call</span>
+                </button>
+                <button
+                  className={`p-3 rounded-lg border flex items-center gap-2 ${formData.visitType === "IN_PERSON" ? "border-primary bg-primary/5" : "border-border"}`}
+                  onClick={() => setFormData((p) => ({ ...p, visitType: "IN_PERSON" }))}
+                >
+                  <MapPin className="w-4 h-4 text-primary" />
+                  <span>In-Person</span>
+                </button>
+              </div>
             </div>
 
             {/* Booking Summary */}
             {formData.date && formData.time && (
               <div className="p-4 rounded-xl bg-success/10 border border-success/20">
-                <h4 className="font-medium text-foreground mb-2">{t('common.bookingSummary')}</h4>
+                <h4 className="font-medium text-foreground mb-2">{i18nText('common.bookingSummary', 'Booking Summary')}</h4>
                 <div className="space-y-1 text-sm text-muted-foreground">
-                  <p>{t('common.doctor')}: {selectedSpec ? t(`appointments.specialties.${selectedSpec.id}`) : ''}</p>
-                  <p>{t('common.date')}: {format(formData.date, "PP", { locale: getDateLocale() })}</p>
-                  <p>{t('common.time')}: {formData.time}</p>
+                  <p>{i18nText('common.doctor', 'Doctor')}: {selectedSpec ? t(`appointments.specialties.${selectedSpec.id}`) : ''}</p>
+                  <p>{i18nText('common.date', 'Date')}: {format(formData.date, "PP", { locale: getDateLocale() })}</p>
+                  <p>{i18nText('common.time', 'Time')}: {formData.time}</p>
+                  <p>{i18nText('common.visitType', 'Visit Type')}: {formData.visitType === "VIDEO_CALL" ? "Video Call" : "In-Person"}</p>
                 </div>
               </div>
             )}
@@ -209,15 +295,15 @@ const BookingModal = ({ open, onOpenChange, onBookingConfirmed }) => {
             {/* Actions */}
             <div className="flex gap-3 pt-4">
               <Button variant="outline" onClick={handleBack} className="flex-1">
-                {t('common.back')}
+                {i18nText('common.back', 'Back')}
               </Button>
               <Button
                 variant="hero"
                 onClick={handleSubmit}
                 className="flex-1"
-                disabled={!formData.date || !formData.time}
+                disabled={!formData.date || !formData.time || !formData.doctorId}
               >
-                {t('common.confirm')}
+                {i18nText('common.confirm', 'Confirm')}
               </Button>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import AppointmentCard from "@/components/dashboard/AppointmentCard";
@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { getDateLocale } from "@/lib/utils";
+import { appointmentsService } from "@/services/api";
 
 const PatientAppointments = () => {
   const { t } = useTranslation();
@@ -34,37 +35,45 @@ const PatientAppointments = () => {
     { name: t('common.settings'), href: "/patient/settings", icon: Settings },
   ];
   
-  const [appointments, setAppointments] = useState([
-    {
-      id: "1",
-      doctorName: "Sarah Johnson",
-      specialty: t('appointments.specialties.general'),
-      date: new Date(2026, 0, 25), // Jan 25, 2026
-      time: "10:00 AM",
-      type: "video",
-      status: "upcoming",
-      avatar: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80",
-    },
-    {
-      id: "2",
-      doctorName: "Michael Chen",
-      specialty: t('appointments.specialties.cardio'),
-      date: new Date(2026, 0, 28), // Jan 28, 2026
-      time: "2:30 PM",
-      type: "in-person",
-      status: "upcoming",
-      avatar: "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80",
-    },
-    {
-      id: "3",
-      doctorName: "Emily Williams",
-      specialty: t('appointments.specialties.derma'),
-      date: new Date(2026, 1, 5), // Feb 5, 2026
-      time: "11:00 AM",
-      type: "video",
-      status: "upcoming",
-    },
-  ]);
+  const [appointments, setAppointments] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const mapStatus = (s) => {
+    switch (s) {
+      case "UPCOMING": return "upcoming";
+      case "COMPLETED": return "completed";
+      case "CANCELLED": return "cancelled";
+      default: return "upcoming";
+    }
+  };
+
+  const mapType = (t) => t === "IN_PERSON" ? "in-person" : "video";
+
+  const loadAppointments = async () => {
+    setLoading(true);
+    try {
+      const res = await appointmentsService.myAppointments();
+      const items = (res || []).map((a) => ({
+        id: a.id,
+        doctorName: a.doctor_name || "Doctor",
+        specialty: a.doctor_specialization || "",
+        date: new Date(a.date),
+        time: a.time_slot,
+        type: mapType(a.visit_type),
+        status: mapStatus(a.status),
+        doctorId: a.doctor,
+      }));
+      setAppointments(items);
+    } catch {
+      setAppointments([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAppointments();
+  }, []);
 
   const completedAppointments = [
     {
@@ -102,28 +111,8 @@ const PatientAppointments = () => {
 
   const upcomingAppointments = appointments.filter(a => a.status === "upcoming");
 
-  const handleBookingConfirmed = (booking) => {
-    const specNames = {
-      general: t('appointments.specialties.general'),
-      cardio: t('appointments.specialties.cardio'),
-      neuro: t('appointments.specialties.neuro'),
-      ortho: t('appointments.specialties.ortho'),
-      eye: t('appointments.specialties.eye'),
-      pedia: t('appointments.specialties.pedia'),
-      derma: t('appointments.specialties.derma'),
-    };
-
-    const newAppointment = {
-      id: Date.now().toString(),
-      doctorName: t('appointments.specialties.availableDoctor'),
-      specialty: specNames[booking.specialization] || booking.specialization,
-      date: booking.date,
-      time: booking.time,
-      type: "video",
-      status: "upcoming",
-    };
-
-    setAppointments([...appointments, newAppointment]);
+  const handleBookingConfirmed = () => {
+    loadAppointments();
   };
 
   const handleReschedule = (appointment) => {
@@ -131,14 +120,19 @@ const PatientAppointments = () => {
     setRescheduleModalOpen(true);
   };
 
-  const handleRescheduleConfirm = (newDate, newTime) => {
+  const handleRescheduleConfirm = async (newDate, newTime) => {
     if (selectedAppointment) {
-      setAppointments(appointments.map(apt => 
-        apt.id === selectedAppointment.id 
-          ? { ...apt, date: newDate, time: newTime }
-          : apt
-      ));
-      toast.success(t('appointments.rescheduleSuccess'));
+      try {
+        await appointmentsService.requestReschedule(
+          selectedAppointment.id,
+          format(newDate, "yyyy-MM-dd"),
+          newTime
+        );
+        toast.success(t('appointments.rescheduleSuccess'));
+        loadAppointments();
+      } catch {
+        toast.error(t('common.error') || "Error");
+      }
     }
     setSelectedAppointment(null);
     setRescheduleModalOpen(false);
@@ -148,11 +142,14 @@ const PatientAppointments = () => {
     toast.success(t('appointments.joinCall', { name: appointment.doctorName }));
   };
 
-  const handleCancel = (appointment) => {
-    toast.error(t('appointments.cancelSuccess', { name: appointment.doctorName }));
-    setAppointments(appointments.map(a => 
-      a.id === appointment.id ? { ...a, status: "cancelled" } : a
-    ));
+  const handleCancel = async (appointment) => {
+    try {
+      await appointmentsService.cancel(appointment.id);
+      toast.error(t('appointments.cancelSuccess', { name: appointment.doctorName }));
+      loadAppointments();
+    } catch {
+      toast.error(t('common.error') || "Error");
+    }
   };
 
   return (
@@ -277,6 +274,7 @@ const PatientAppointments = () => {
         onOpenChange={setRescheduleModalOpen}
         appointmentDetails={selectedAppointment ? {
           doctorName: selectedAppointment.doctorName,
+          doctorId: selectedAppointment.doctorId,
           currentDate: selectedAppointment.date,
           currentTime: selectedAppointment.time,
         } : undefined}
