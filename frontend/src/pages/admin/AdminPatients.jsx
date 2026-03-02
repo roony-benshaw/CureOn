@@ -150,7 +150,7 @@ const AdminPatients = () => {
               key={patient.id} 
               className="dashboard-card relative hover:shadow-lg transition-all group"
             >
-              <div className="block p-5">
+              <Link to={`/admin/patients/${patient.id}`} className="block p-5">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -181,7 +181,7 @@ const AdminPatients = () => {
                 <div className="flex items-center justify-between pt-4 border-t border-border">
                   <span className={`badge-status ${patient.status === "active" ? "badge-success" : "badge-warning"} capitalize`}>{patient.status}</span>
                 </div>
-              </div>
+              </Link>
               
               <div className="absolute top-5 right-5 z-10">
                 <DropdownMenu>

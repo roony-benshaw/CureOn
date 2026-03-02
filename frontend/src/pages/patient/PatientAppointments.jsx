@@ -75,39 +75,8 @@ const PatientAppointments = () => {
     loadAppointments();
   }, []);
 
-  const completedAppointments = [
-    {
-      id: "4",
-      doctorName: "Sarah Johnson",
-      specialty: t('appointments.specialties.general'),
-      date: new Date(2026, 0, 10), // Jan 10, 2026
-      time: "10:00 AM",
-      type: "video",
-      status: "completed",
-      avatar: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80",
-    },
-    {
-      id: "5",
-      doctorName: "James Wilson",
-      specialty: t('appointments.specialties.ortho'),
-      date: new Date(2025, 11, 28), // Dec 28, 2025
-      time: "3:00 PM",
-      type: "in-person",
-      status: "completed",
-    },
-  ];
-
-  const cancelledAppointments = [
-    {
-      id: "6",
-      doctorName: "Robert Brown",
-      specialty: t('appointments.specialties.neuro'),
-      date: new Date(2026, 0, 5), // Jan 5, 2026
-      time: "2:00 PM",
-      type: "video",
-      status: "cancelled",
-    },
-  ];
+  const completedAppointments = appointments.filter(a => a.status === "completed");
+  const cancelledAppointments = appointments.filter(a => a.status === "cancelled");
 
   const upcomingAppointments = appointments.filter(a => a.status === "upcoming");
 
@@ -219,12 +188,12 @@ const PatientAppointments = () => {
 
           <TabsContent value="completed" className="mt-6">
             <div className="space-y-4">
-              {completedAppointments.length > 0 ? (
-                completedAppointments.map((appointment) => (
+                {completedAppointments.length > 0 ? (
+                  completedAppointments.map((appointment) => (
                   <AppointmentCard
                     key={appointment.id}
-                    {...appointment}
-                    date={format(appointment.date, "PP", { locale: getDateLocale() })}
+                      {...appointment}
+                      date={format(appointment.date, "PP", { locale: getDateLocale() })}
                     userType="patient"
                     showActions={false}
                   />
@@ -240,12 +209,12 @@ const PatientAppointments = () => {
 
           <TabsContent value="cancelled" className="mt-6">
             <div className="space-y-4">
-              {cancelledAppointments.length > 0 ? (
-                cancelledAppointments.map((appointment) => (
+                {cancelledAppointments.length > 0 ? (
+                  cancelledAppointments.map((appointment) => (
                   <AppointmentCard
                     key={appointment.id}
-                    {...appointment}
-                    date={format(appointment.date, "PP", { locale: getDateLocale() })}
+                      {...appointment}
+                      date={format(appointment.date, "PP", { locale: getDateLocale() })}
                     userType="patient"
                     showActions={false}
                   />

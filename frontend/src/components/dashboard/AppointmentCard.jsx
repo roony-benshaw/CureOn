@@ -17,8 +17,13 @@ const AppointmentCard = ({
   onJoin,
   onReschedule,
   onCancel,
+  onComplete,
 }) => {
   const { t } = useTranslation();
+  const i18nText = (key, fallback) => {
+    const val = t(key);
+    return val === key ? fallback : val;
+  };
   const statusStyles = {
     upcoming: "badge-pending",
     completed: "bg-muted text-muted-foreground",
@@ -82,15 +87,21 @@ const AppointmentCard = ({
             <div className="flex items-center gap-2 mt-4">
               {type === "video" && (
                 <Button size="sm" variant="default" onClick={onJoin}>
-                  {t('common.joinCall')}
+                  {i18nText('common.joinCall', 'Join Call')}
                 </Button>
               )}
               <Button size="sm" variant="outline" onClick={onReschedule}>
-                {t('common.reschedule')}
+                {i18nText('common.reschedule', 'Reschedule')}
               </Button>
+              {userType === "doctor" && (
+                <Button size="sm" variant="hero" onClick={onComplete}>
+                  {i18nText('appointments.complete', 'Completed ')}
+                </Button>
+              )}
               <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={onCancel}>
-                {t('common.cancel')}
+                {i18nText('common.cancel', 'Cancel')}
               </Button>
+              
             </div>
           )}
 

@@ -25,11 +25,24 @@ class PatientProfile(models.Model):
     gender = models.CharField(max_length=20, null=True, blank=True)
     phone = models.CharField(max_length=50, null=True, blank=True)
     address = models.CharField(max_length=255, null=True, blank=True)
+    date_of_birth = models.DateField(null=True, blank=True)
+    blood_type = models.CharField(max_length=3, null=True, blank=True)
+    height_cm = models.IntegerField(null=True, blank=True)
+    weight_kg = models.FloatField(null=True, blank=True)
+    allergies = models.TextField(null=True, blank=True)
+    chronic_diseases = models.TextField(null=True, blank=True)
+    past_diseases = models.TextField(null=True, blank=True)
+    family_history = models.TextField(null=True, blank=True)
 
 class DoctorProfile(models.Model):
     user = models.OneToOneField("accounts.User", on_delete=models.CASCADE, related_name="doctor_profile")
     specialization = models.CharField(max_length=100, null=True, blank=True)
     phone = models.CharField(max_length=50, null=True, blank=True)
+    license_number = models.CharField(max_length=100, null=True, blank=True)
+    hospital_name = models.CharField(max_length=255, null=True, blank=True)
+    experience_years = models.IntegerField(null=True, blank=True)
+    date_of_birth = models.DateField(null=True, blank=True)
+    about = models.TextField(null=True, blank=True)
 
 class PharmacyProfile(models.Model):
     user = models.OneToOneField("accounts.User", on_delete=models.CASCADE, related_name="pharmacy_profile")

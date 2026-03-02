@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { appointmentsService } from "@/services/api";
 
 const PatientDashboard = () => {
   const navigate = useNavigate();
@@ -40,32 +42,66 @@ const PatientDashboard = () => {
     { name: t('common.settings'), href: "/patient/settings", icon: Settings },
   ];
   
-  const upcomingAppointments = [
-    {
-      doctorName: "Sarah Johnson",
-      specialty: t('appointments.specialties.general'),
-      date: new Date(2026, 0, 25),
-      time: "10:00 AM",
-      type: "video",
-      status: "upcoming",
-      avatar: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80",
-    },
-    {
-      doctorName: "Michael Chen",
-      specialty: t('appointments.specialties.cardio'),
-      date: new Date(2026, 0, 28),
-      time: "2:30 PM",
-      type: "in-person",
-      status: "upcoming",
-      avatar: "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80",
-    },
-  ];
+  const [appointments, setAppointments] = useState([]);
+  const [prescriptions, setPrescriptions] = useState([]);
+  const [labResults, setLabResults] = useState([]);
 
-  const recentRecords = [
-    { name: t('dashboard.recentRecordsData.bloodTestResults'), date: new Date(2026, 0, 15), type: t('dashboard.recentRecordsData.labReport') },
-    { name: t('dashboard.recentRecordsData.generalCheckup'), date: new Date(2026, 0, 10), type: t('dashboard.recentRecordsData.consultation') },
-    { name: t('dashboard.recentRecordsData.antibiotics'), date: new Date(2026, 0, 10), type: t('dashboard.recentRecordsData.prescription') },
-  ];
+  const mapType = (t) => (t === "IN_PERSON" ? "in-person" : "video");
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [appts, presc, labs] = await Promise.all([
+          appointmentsService.myAppointments(),
+          appointmentsService.prescriptions.listPatient(),
+          appointmentsService.lab.patientResults(),
+        ]);
+        setAppointments(appts || []);
+        setPrescriptions(presc || []);
+        setLabResults(labs || []);
+      } catch {
+        setAppointments([]);
+        setPrescriptions([]);
+        setLabResults([]);
+      }
+    };
+    load();
+  }, []);
+
+  const upcomingAppointments = useMemo(() => {
+    return (appointments || [])
+      .filter((a) => a.status === "UPCOMING")
+      .slice(0, 5)
+      .map((a) => ({
+        doctorName: a.doctor_name || "Doctor",
+        specialty: a.doctor_specialization || "",
+        date: new Date(a.date),
+        time: a.time_slot,
+        type: mapType(a.visit_type),
+        status: "upcoming",
+      }));
+  }, [appointments]);
+
+  const stats = useMemo(() => {
+    const upcoming = (appointments || []).filter((a) => a.status === "UPCOMING").length;
+    const completed = (appointments || []).filter((a) => a.status === "COMPLETED").length;
+    const activeRx = (prescriptions || []).filter((p) => (p.status || "").toUpperCase() === "ACTIVE").length;
+    return { upcoming, completed, activeRx };
+  }, [appointments, prescriptions]);
+
+  const recentRecords = useMemo(() => {
+    const labs = (labResults || []).slice(0, 3).map((lr) => ({
+      name: Array.isArray(lr.tests) ? lr.tests.join(", ") : t('dashboard.recentRecordsData.labReport'),
+      date: new Date(lr.created_at),
+      type: t('dashboard.recentRecordsData.labReport'),
+    }));
+    const rx = (prescriptions || []).slice(0, 3).map((p) => ({
+      name: p.diagnosis || t('dashboard.recentRecordsData.prescription'),
+      date: new Date(p.created_at),
+      type: t('dashboard.recentRecordsData.prescription'),
+    }));
+    return [...labs, ...rx].sort((a, b) => b.date - a.date).slice(0, 3);
+  }, [labResults, prescriptions, t]);
 
   return (
     <DashboardLayout
@@ -90,7 +126,7 @@ const PatientDashboard = () => {
           <div onClick={() => navigate("/patient/appointments")} className="cursor-pointer transition-transform hover:scale-105">
             <StatCard
               title={t('dashboard.upcomingAppointments')}
-              value={2}
+              value={stats.upcoming}
               icon={Calendar}
               iconColor="text-primary"
               iconBg="bg-primary/10"
@@ -99,7 +135,7 @@ const PatientDashboard = () => {
           <div className="cursor-pointer transition-transform hover:scale-105">
             <StatCard
               title={t('dashboard.completedVisits')}
-              value={12}
+              value={stats.completed}
               icon={CheckCircle2}
               iconColor="text-success"
               iconBg="bg-success/10"
@@ -108,7 +144,7 @@ const PatientDashboard = () => {
           <div onClick={() => navigate("/patient/prescriptions")} className="cursor-pointer transition-transform hover:scale-105">
             <StatCard
               title={t('dashboard.activePrescriptions')}
-              value={3}
+              value={stats.activeRx}
               icon={Pill}
               iconColor="text-accent"
               iconBg="bg-accent/10"

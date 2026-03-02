@@ -216,7 +216,7 @@ const AddDoctorModal = ({ open, onOpenChange, onDoctorAdded }) => {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="doctor@medicare.com"
+                  placeholder="doctor@cureon.com"
                   value={formData.email}
                   onChange={(e) => handleInputChange("email", e.target.value)}
                 />

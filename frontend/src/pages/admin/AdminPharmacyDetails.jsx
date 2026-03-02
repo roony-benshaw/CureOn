@@ -10,13 +10,11 @@ import {
   Mail,
   Phone,
   ArrowLeft,
-  Award,
-  Clock,
-  MapPin,
-  User,
   Users,
   Pill,
-  FlaskConical
+  FlaskConical,
+  MapPin,
+  Building2
 } from "lucide-react";
 import {
   Table,
@@ -38,19 +36,19 @@ const navItems = [
   { name: "Settings", href: "/admin/settings", icon: Settings },
 ];
 
-const AdminDoctorDetails = () => {
+const AdminPharmacyDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [doctor, setDoctor] = useState(null);
+  const [pharmacy, setPharmacy] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchDetail = async () => {
       try {
-        const data = await adminService.getDoctorDetail(id);
-        setDoctor(data);
+        const data = await adminService.getPharmacyDetail(id);
+        setPharmacy(data);
       } catch (error) {
-        console.error("Failed to fetch doctor details", error);
+        console.error("Failed to fetch pharmacy details", error);
       } finally {
         setLoading(false);
       }
@@ -62,97 +60,90 @@ const AdminDoctorDetails = () => {
     return <DashboardLayout navItems={navItems} userType="admin"><div>Loading...</div></DashboardLayout>;
   }
 
-  if (!doctor) {
-    return <DashboardLayout navItems={navItems} userType="admin"><div>Doctor not found</div></DashboardLayout>;
+  if (!pharmacy) {
+    return <DashboardLayout navItems={navItems} userType="admin"><div>Pharmacy not found</div></DashboardLayout>;
   }
 
-  const name = (doctor.first_name || doctor.last_name) ? `${doctor.first_name} ${doctor.last_name}` : doctor.username;
+  const name = pharmacy.username; 
 
   return (
     <DashboardLayout navItems={navItems} userType="admin">
       <div className="space-y-6">
-        {/* Header with Back Button */}
         <div className="flex items-center gap-4">
-          <Button variant="outline" size="icon" onClick={() => navigate("/admin/doctors")}>
+          <Button variant="outline" size="icon" onClick={() => navigate("/admin/pharmacy")}>
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <h1 className="font-display text-2xl font-bold text-foreground">Doctor Details</h1>
-            <p className="text-muted-foreground">View detailed information and patient history</p>
+            <h1 className="font-display text-2xl font-bold text-foreground">Pharmacy Details</h1>
+            <p className="text-muted-foreground">View information and order history</p>
           </div>
         </div>
 
-        {/* Doctor Profile Card */}
         <div className="dashboard-card p-6">
           <div className="flex flex-col md:flex-row gap-6 items-start">
             <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-              <span className="text-primary font-bold text-3xl">{name.split(" ")[1]?.charAt(0) || name.charAt(0)}</span>
+              <span className="text-primary font-bold text-3xl">{name.charAt(0).toUpperCase()}</span>
             </div>
             
             <div className="flex-1 space-y-4">
               <div>
                 <h2 className="text-2xl font-bold text-foreground">{name}</h2>
-                <p className="text-lg text-muted-foreground font-medium">{doctor.specialization || "General Physician"}</p>
+                <p className="text-lg text-muted-foreground font-medium">License: {pharmacy.license_number || "N/A"}</p>
               </div>
 
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="flex items-center gap-3 text-sm">
                   <Mail className="w-4 h-4 text-primary" />
-                  <span>{doctor.email}</span>
+                  <span>{pharmacy.email}</span>
                 </div>
                 <div className="flex items-center gap-3 text-sm">
                   <Phone className="w-4 h-4 text-primary" />
-                  <span>{doctor.phone || "No phone"}</span>
+                  <span>{pharmacy.phone || "No phone"}</span>
                 </div>
                 <div className="flex items-center gap-3 text-sm">
-                  <Award className="w-4 h-4 text-primary" />
-                  <span>Patients Treated: {doctor.patients_treated_count || 0}</span>
+                  <MapPin className="w-4 h-4 text-primary" />
+                  <span>{pharmacy.address || "No address"}</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                  <Building2 className="w-4 h-4 text-primary" />
+                  <span>Joined: {new Date(pharmacy.date_joined).toLocaleDateString()}</span>
                 </div>
               </div>
-
-              {doctor.about && (
-                <div className="pt-2">
-                  <h3 className="font-semibold mb-1">About</h3>
-                  <p className="text-muted-foreground text-sm leading-relaxed">{doctor.about}</p>
-                </div>
-              )}
             </div>
           </div>
         </div>
 
-        {/* Patients Treated Table */}
         <div className="space-y-4">
           <h2 className="font-display text-xl font-semibold text-foreground flex items-center gap-2">
-            <User className="w-5 h-5 text-primary" />
-            Appointments History
+            <Pill className="w-5 h-5 text-primary" />
+            Processed Prescriptions
           </h2>
-          
           <div className="dashboard-card overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Patient Name</TableHead>
                   <TableHead>Date</TableHead>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Type</TableHead>
+                  <TableHead>Patient</TableHead>
+                  <TableHead>Doctor</TableHead>
+                  <TableHead>Items</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {doctor.appointments && doctor.appointments.length > 0 ? (
-                  doctor.appointments.map((appt) => (
-                    <TableRow key={appt.id}>
-                      <TableCell className="font-medium">{appt.patient_name}</TableCell>
-                      <TableCell>{appt.date}</TableCell>
-                      <TableCell>{appt.time_slot}</TableCell>
-                      <TableCell>{appt.visit_type}</TableCell>
+                {pharmacy.processed_prescriptions && pharmacy.processed_prescriptions.length > 0 ? (
+                  pharmacy.processed_prescriptions.map((pres) => (
+                    <TableRow key={pres.id}>
+                      <TableCell>{new Date(pres.created_at).toLocaleDateString()}</TableCell>
+                      <TableCell>{pres.patient_name}</TableCell>
+                      <TableCell>{pres.doctor_name}</TableCell>
+                      <TableCell>{pres.items?.length || 0} items</TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          appt.status === 'COMPLETED' ? 'bg-green-100 text-green-800' : 
-                          appt.status === 'UPCOMING' ? 'bg-blue-100 text-blue-800' : 
-                          'bg-gray-100 text-gray-800'
+                          pres.pharmacy_status === 'COMPLETED' ? 'bg-green-100 text-green-800' : 
+                          pres.pharmacy_status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-blue-100 text-blue-800'
                         }`}>
-                          {appt.status}
+                          {pres.pharmacy_status}
                         </span>
                       </TableCell>
                     </TableRow>
@@ -160,7 +151,7 @@ const AdminDoctorDetails = () => {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
-                      No appointments found.
+                      No prescriptions processed yet.
                     </TableCell>
                   </TableRow>
                 )}
@@ -173,4 +164,4 @@ const AdminDoctorDetails = () => {
   );
 };
 
-export default AdminDoctorDetails;
+export default AdminPharmacyDetails;

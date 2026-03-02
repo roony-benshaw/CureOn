@@ -48,47 +48,45 @@ const PrescriptionModal = ({ open, onOpenChange, appointment, onSubmit }) => {
     }
 
     setSubmitting(true);
-    
-    // Simulate API call
-    const prescriptionData = {
-      appointmentId: appointment?.id,
-      patientName: appointment?.patientName,
-      diagnosis,
-      medicines,
-      notes,
-      date: new Date().toISOString()
-    };
-
     try {
-      const response = await fetch("http://localhost:8000/api/prescriptions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(prescriptionData),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to submit prescription");
-      }
-
-      const result = await response.json();
-      console.log("Prescription Submitted:", result);
-      
+      const { appointmentsService } = await import("@/services/api");
+      const payload = {
+        diagnosis,
+        items: medicines.map(m => ({
+          name: m.name,
+          dosage: m.dosage,
+          frequency: m.frequency,
+          duration: m.duration,
+        })),
+        notes,
+      };
+      const result = await appointmentsService.prescriptions.create(appointment.id, payload);
+      toast.success("Prescription sent successfully");
       if (onSubmit) {
-        await onSubmit(prescriptionData);
-      } else {
-        toast.success("Prescription sent successfully");
-        onOpenChange(false);
+        await onSubmit(result);
       }
-      
-      // Reset form
+      onOpenChange(false);
       setDiagnosis("");
       setMedicines([{ name: "", dosage: "", frequency: "", duration: "" }]);
       setNotes("");
     } catch (error) {
-      console.error("Error submitting prescription:", error);
-      toast.error("Failed to submit prescription");
+      const detail =
+        error?.response?.data?.detail ||
+        (Array.isArray(error?.response?.data?.non_field_errors) ? error.response.data.non_field_errors.join(", ") : null) ||
+        (typeof error?.response?.data === "string" ? error.response.data : null);
+      const firstItemError = (() => {
+        const itemsErr = error?.response?.data?.items;
+        if (Array.isArray(itemsErr) && itemsErr.length > 0) {
+          const e0 = itemsErr[0];
+          if (typeof e0 === "string") return e0;
+          if (e0 && typeof e0 === "object") {
+            const keys = Object.keys(e0);
+            if (keys.length > 0 && Array.isArray(e0[keys[0]])) return e0[keys[0]].join(", ");
+          }
+        }
+        return null;
+      })();
+      toast.error(detail || firstItemError || "Failed to submit prescription");
     } finally {
       setSubmitting(false);
     }

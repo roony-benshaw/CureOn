@@ -67,11 +67,11 @@ const LabsSettings = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="lab-name">Lab Name</Label>
-                    <Input id="lab-name" defaultValue="Medicare Main Lab" />
+                    <Input id="lab-name" defaultValue="CureOn Main Lab" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email Address</Label>
-                    <Input id="email" defaultValue="lab@medicare.com" />
+                    <Input id="email" defaultValue="lab@cureon.com" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="phone">Phone Number</Label>

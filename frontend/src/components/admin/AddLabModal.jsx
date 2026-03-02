@@ -170,7 +170,7 @@ const AddLabModal = ({ open, onOpenChange, onLabAdded }) => {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="lab@medicare.com"
+                  placeholder="lab@cureon.com"
                   value={formData.email}
                   onChange={(e) => handleInputChange("email", e.target.value)}
                 />

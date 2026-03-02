@@ -6,7 +6,17 @@ from django.conf import settings
 from django.core.mail import send_mail
 import secrets
 import string
-from .serializers import RegisterSerializer, CreateStaffSerializer, UserSerializer, ExtendedUserSerializer, AdminUserUpdateSerializer
+from .serializers import (
+    RegisterSerializer,
+    CreateStaffSerializer,
+    UserSerializer,
+    ExtendedUserSerializer,
+    AdminUserUpdateSerializer,
+    PatientProfileUpdateSerializer,
+    DoctorProfileUpdateSerializer,
+    PharmacyProfileUpdateSerializer,
+    LabProfileUpdateSerializer,
+)
 from .models import PatientProfile, DoctorProfile, PharmacyProfile, LabProfile
 from .permissions import IsAdmin
 
@@ -89,7 +99,7 @@ class AdminCreateStaffView(generics.CreateAPIView):
 
 class UserDetailView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated]
-    serializer_class = UserSerializer
+    serializer_class = ExtendedUserSerializer
 
     def get_object(self):
         return self.request.user
@@ -116,10 +126,90 @@ class DoctorsPublicListView(generics.ListAPIView):
             qs = qs.filter(doctor_profile__specialization__iexact=specialization)
         return qs
 
+class LabsPublicListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ExtendedUserSerializer
+
+    def get_queryset(self):
+        qs = User.objects.filter(role=User.Role.LAB).order_by('username')
+        return qs
+
 class AdminUserUpdateView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAdmin]
     queryset = User.objects.all()
     serializer_class = AdminUserUpdateSerializer
+
+class PatientProfileView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(ExtendedUserSerializer(request.user).data)
+
+    def patch(self, request):
+        if request.user.role != User.Role.PATIENT:
+            return Response({"detail": "Not a patient"}, status=status.HTTP_403_FORBIDDEN)
+        serializer = PatientProfileUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.update(request.user, serializer.validated_data)
+        return Response(ExtendedUserSerializer(request.user).data)
+
+class DoctorProfileView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(ExtendedUserSerializer(request.user).data)
+
+    def patch(self, request):
+        if request.user.role != User.Role.DOCTOR:
+            return Response({"detail": "Not a doctor"}, status=status.HTTP_403_FORBIDDEN)
+        serializer = DoctorProfileUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.update(request.user, serializer.validated_data)
+        return Response(ExtendedUserSerializer(request.user).data)
+
+class PharmacyProfileView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(ExtendedUserSerializer(request.user).data)
+
+    def patch(self, request):
+        if request.user.role != User.Role.PHARMACY:
+            return Response({"detail": "Not a pharmacy"}, status=status.HTTP_403_FORBIDDEN)
+        serializer = PharmacyProfileUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.update(request.user, serializer.validated_data)
+        return Response(ExtendedUserSerializer(request.user).data)
+
+class LabProfileView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(ExtendedUserSerializer(request.user).data)
+
+    def patch(self, request):
+        if request.user.role != User.Role.LAB:
+            return Response({"detail": "Not a lab"}, status=status.HTTP_403_FORBIDDEN)
+        serializer = LabProfileUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.update(request.user, serializer.validated_data)
+        return Response(ExtendedUserSerializer(request.user).data)
+
+class AdminProfileView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(ExtendedUserSerializer(request.user).data)
+
+    def patch(self, request):
+        if request.user.role != User.Role.ADMIN:
+            return Response({"detail": "Not an admin"}, status=status.HTTP_403_FORBIDDEN)
+        # Allow updating first_name, last_name, email only
+        data = {k: request.data.get(k) for k in ['first_name', 'last_name', 'email'] if k in request.data}
+        for f, v in data.items():
+            setattr(request.user, f, v)
+        request.user.save()
+        return Response(ExtendedUserSerializer(request.user).data)
 
 class SendCredentialsView(APIView):
     permission_classes = [IsAdmin]

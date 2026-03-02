@@ -2,6 +2,8 @@ import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import StatCard from "@/components/dashboard/StatCard";
 import { useUser } from "@/context/UserContext";
 import { LayoutDashboard, Users, Calendar, Settings, Stethoscope, CheckCircle2, Clock, XCircle, Pill, FlaskConical } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { userService, appointmentsService } from "@/services/api";
 
 const navItems = [
   { name: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
@@ -15,13 +17,43 @@ const navItems = [
 
 const AdminDashboard = () => {
   const { user } = useUser();
-  // const adminProfile = getUser("admin");
+  const [users, setUsers] = useState([]);
+  const [appts, setAppts] = useState([]);
 
-  const appointmentStats = [
-    { label: "Completed", value: 1248, icon: CheckCircle2, color: "text-success" },
-    { label: "Pending", value: 56, icon: Clock, color: "text-warning" },
-    { label: "Cancelled", value: 23, icon: XCircle, color: "text-destructive" },
-  ];
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [u, a] = await Promise.all([
+          userService.list(),
+          appointmentsService.adminAll(),
+        ]);
+        setUsers(u || []);
+        setAppts(a || []);
+      } catch {
+        setUsers([]);
+        setAppts([]);
+      }
+    };
+    load();
+  }, []);
+
+  const totals = useMemo(() => {
+    const totalUsers = users.length;
+    const activeDoctors = (users || []).filter((u) => u.role === "DOCTOR" && u.is_active).length;
+    const totalAppointments = appts.length;
+    return { totalUsers, activeDoctors, totalAppointments };
+  }, [users, appts]);
+
+  const appointmentStats = useMemo(() => {
+    const completed = (appts || []).filter((a) => a.status === "COMPLETED").length;
+    const pending = (appts || []).filter((a) => a.status === "UPCOMING").length;
+    const cancelled = (appts || []).filter((a) => a.status === "CANCELLED").length;
+    return [
+      { label: "Completed", value: completed, icon: CheckCircle2, color: "text-success" },
+      { label: "Pending", value: pending, icon: Clock, color: "text-warning" },
+      { label: "Cancelled", value: cancelled, icon: XCircle, color: "text-destructive" },
+    ];
+  }, [appts]);
 
   return (
     <DashboardLayout navItems={navItems} userType="admin">
@@ -33,9 +65,9 @@ const AdminDashboard = () => {
 
         {/* Main Stats */}
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-          <StatCard title="Total Users" value="12,458" icon={Users} iconColor="text-primary" iconBg="bg-primary/10" />
-          <StatCard title="Active Doctors" value="186" icon={Stethoscope} iconColor="text-success" iconBg="bg-success/10" />
-          <StatCard title="Total Appointments" value="3,842" icon={Calendar} iconColor="text-accent" iconBg="bg-accent/10" />
+          <StatCard title="Total Users" value={totals.totalUsers} icon={Users} iconColor="text-primary" iconBg="bg-primary/10" />
+          <StatCard title="Active Doctors" value={totals.activeDoctors} icon={Stethoscope} iconColor="text-success" iconBg="bg-success/10" />
+          <StatCard title="Total Appointments" value={totals.totalAppointments} icon={Calendar} iconColor="text-accent" iconBg="bg-accent/10" />
         </div>
 
         {/* Appointment Stats */}

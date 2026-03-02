@@ -26,6 +26,7 @@ import {
   FlaskConical
 } from "lucide-react";
 import { toast } from "sonner";
+import { profileService } from "@/services/api";
 
 const navItems = [
   { name: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
@@ -39,16 +40,24 @@ const navItems = [
 
 const AdminProfile = () => {
   const { user } = useUser();
-  const adminProfile = user;
 
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState(adminProfile || {});
+  const [formData, setFormData] = useState({});
 
   useEffect(() => {
-    if (adminProfile) {
-      setFormData(adminProfile);
-    }
-  }, [adminProfile]);
+    const load = async () => {
+      try {
+        const data = await profileService.admin.get();
+        setFormData({
+          name: `${data.first_name || ""} ${data.last_name || ""}`.trim() || data.username,
+          email: data.email || "",
+          role: data.role,
+          phone: data.phone || "",
+        });
+      } catch {}
+    };
+    load();
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -67,14 +76,20 @@ const AdminProfile = () => {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setLoading(true);
-    setTimeout(() => {
-      // updateUser("admin", formData);
-      console.log("Update user:", formData);
-      setLoading(false);
+    try {
+      const [firstName, ...rest] = (formData.name || "").split(" ");
+      const lastName = rest.join(" ");
+      await profileService.admin.update({
+        first_name: firstName || "",
+        last_name: lastName || "",
+        email: formData.email || "",
+      });
       toast.success("Profile updated successfully");
-    }, 1000);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

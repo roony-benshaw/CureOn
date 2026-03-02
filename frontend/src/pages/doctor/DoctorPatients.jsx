@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import PatientHistoryModal from "@/components/doctor/PatientHistoryModal";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
+import { appointmentsService } from "@/services/api";
 
 const DoctorPatients = () => {
   const { t } = useTranslation();
@@ -36,70 +37,34 @@ const DoctorPatients = () => {
   // State for patient files (persistence across modal opens)
   const [patientFiles, setPatientFiles] = useState({});
 
-  const patients = [
-    {
-      id: "1",
-      name: "Emily Rodriguez",
-      email: "emily.r@email.com",
-      phone: "+1 (555) 123-4567",
-      age: 32,
-      condition: "Hypertension",
-      lastVisit: "Jan 20, 2026",
-      totalVisits: 8,
-      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80",
-    },
-    {
-      id: "2",
-      name: "James Wilson",
-      email: "james.w@email.com",
-      phone: "+1 (555) 234-5678",
-      age: 45,
-      condition: "Diabetes Type 2",
-      lastVisit: "Jan 18, 2026",
-      totalVisits: 12,
-    },
-    {
-      id: "3",
-      name: "Sarah Chen",
-      email: "sarah.c@email.com",
-      phone: "+1 (555) 345-6789",
-      age: 28,
-      condition: "Routine Checkup",
-      lastVisit: "Jan 15, 2026",
-      totalVisits: 3,
-      avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80",
-    },
-    {
-      id: "4",
-      name: "Michael Brown",
-      email: "michael.b@email.com",
-      phone: "+1 (555) 456-7890",
-      age: 52,
-      condition: "Arthritis",
-      lastVisit: "Jan 12, 2026",
-      totalVisits: 15,
-    },
-    {
-      id: "5",
-      name: "Lisa Anderson",
-      email: "lisa.a@email.com",
-      phone: "+1 (555) 567-8901",
-      age: 38,
-      condition: "Migraine",
-      lastVisit: "Jan 10, 2026",
-      totalVisits: 6,
-    },
-    {
-      id: "6",
-      name: "David Martinez",
-      email: "david.m@email.com",
-      phone: "+1 (555) 678-9012",
-      age: 41,
-      condition: "Allergies",
-      lastVisit: "Jan 8, 2026",
-      totalVisits: 4,
-    },
-  ];
+  const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const res = await appointmentsService.doctorPatients();
+        const items = (res || []).map((p) => ({
+          id: String(p.id),
+          name: p.name || "Patient",
+          email: p.email || "",
+          phone: p.phone || "",
+          age: p.age || "-",
+          condition: p.condition || "-",
+          lastVisit: p.last_visit ? new Date(p.last_visit).toLocaleDateString() : "-",
+          totalVisits: p.total_visits || 0,
+          avatar: null,
+        }));
+        setPatients(items);
+      } catch {
+        setPatients([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
 
   const handleViewHistory = (patient) => {
     setSelectedPatient(patient);
@@ -145,11 +110,15 @@ const DoctorPatients = () => {
     }
   };
 
-  const filteredPatients = patients.filter(patient => 
-    patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    patient.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    patient.condition.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredPatients = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return patients;
+    return patients.filter(patient => 
+      patient.name.toLowerCase().includes(q) ||
+      patient.email.toLowerCase().includes(q) ||
+      String(patient.condition || "").toLowerCase().includes(q)
+    );
+  }, [patients, searchTerm]);
 
   return (
     <DashboardLayout
@@ -252,15 +221,6 @@ const DoctorPatients = () => {
         open={historyModalOpen}
         onOpenChange={setHistoryModalOpen}
         patient={selectedPatient}
-        existingFiles={selectedPatient ? (patientFiles[selectedPatient.id] || []) : []}
-        onFileUpload={(file) => {
-          if (selectedPatient) {
-             setPatientFiles(prev => ({
-              ...prev,
-              [selectedPatient.id]: [...(prev[selectedPatient.id] || []), file]
-            }));
-          }
-        }}
       />
     </DashboardLayout>
   );

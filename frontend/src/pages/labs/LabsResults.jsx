@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { appointmentsService } from "@/services/api";
 import {
   LayoutDashboard,
   FlaskConical,
@@ -63,35 +64,32 @@ const LabsResults = () => {
     priority: []
   });
 
-  const [pendingTests, setPendingTests] = useState([
-    {
-      id: "LAB-001",
-      patient: "Emily Rodriguez",
-      test: "CBC",
-      doctor: "Dr. Sarah Johnson",
-      date: "2024-02-03",
-      status: "In Progress",
-      priority: "Routine"
-    },
-    {
-      id: "LAB-003",
-      patient: "Sarah Williams",
-      test: "Urinalysis",
-      doctor: "Dr. Lisa Anderson",
-      date: "2024-02-03",
-      status: "In Progress",
-      priority: "Routine"
-    },
-    {
-      id: "LAB-002",
-      patient: "David Chen",
-      test: "Thyroid Function",
-      doctor: "Dr. Michael Chang",
-      date: "2024-02-03",
-      status: "Pending",
-      priority: "Urgent"
-    }
-  ]);
+  const [pendingTests, setPendingTests] = useState([]);
+  const [uploadFile, setUploadFile] = useState(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await appointmentsService.lab.listRequests();
+        const mapped = (res || [])
+          .filter(r => ["PENDING","IN_PROGRESS"].includes((r.status || "").toUpperCase()))
+          .map(r => ({
+            id: `LAB-${String(r.id).padStart(3,'0')}`,
+            rawId: r.id,
+            patient: r.patient_name,
+            test: Array.isArray(r.tests) ? r.tests.join(", ") : String(r.tests || ""),
+            doctor: `Dr. ${r.doctor_name}`,
+            date: new Date(r.created_at).toISOString().split('T')[0],
+            status: String(r.status || 'PENDING').toLowerCase().replace('_',' ').replace(/\b\w/g,c=>c.toUpperCase()),
+            priority: String(r.priority || 'ROUTINE').toLowerCase().replace('_',' ').replace(/\b\w/g,c=>c.toUpperCase()),
+          }));
+        setPendingTests(mapped);
+      } catch {
+        setPendingTests([]);
+      }
+    };
+    load();
+  }, []);
 
   const handleOpenResultDialog = (test) => {
     setSelectedTest(test);
@@ -99,14 +97,23 @@ const LabsResults = () => {
     setIsResultDialogOpen(true);
   };
 
-  const handleSubmitResult = () => {
+  const handleSubmitResult = async () => {
     if (!selectedTest) return;
-
-    // In a real app, this would send data to backend
-    setPendingTests(pendingTests.filter(t => t.id !== selectedTest.id));
-    
-    toast.success(`Results for ${selectedTest.test} submitted successfully`);
-    setIsResultDialogOpen(false);
+    try {
+      await appointmentsService.lab.submitResult(selectedTest.rawId, {
+        result_value: resultData.value,
+        reference_range: resultData.range,
+        clinical_notes: resultData.comments,
+        attachment: uploadFile,
+      });
+      setPendingTests(prev => prev.filter(t => t.id !== selectedTest.id));
+      toast.success(`Results for ${selectedTest.test} submitted successfully`);
+    } catch {
+      toast.error("Failed to submit results");
+    } finally {
+      setIsResultDialogOpen(false);
+      setUploadFile(null);
+    }
   };
 
   const handleFilterChange = (type, value) => {
@@ -127,7 +134,7 @@ const LabsResults = () => {
     toast.info("Opening bulk upload interface...");
   };
 
-  const filteredTests = pendingTests.filter(test => {
+  const filteredTests = useMemo(() => pendingTests.filter(test => {
     const matchesSearch = 
       test.patient.toLowerCase().includes(searchTerm.toLowerCase()) ||
       test.test.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -142,7 +149,7 @@ const LabsResults = () => {
       return a.date.localeCompare(b.date);
     }
     return b.date.localeCompare(a.date);
-  });
+  }), [pendingTests, searchTerm, filters, sortOrder]);
 
   return (
     <DashboardLayout navItems={navItems} userType="labs">
@@ -253,7 +260,7 @@ const LabsResults = () => {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button size="sm" onClick={() => handleOpenResultDialog(test)}>
+                        <Button size="sm" onClick={() => handleOpenResultDialog(test)} disabled={test.status !== "In Progress"}>
                           <FileText className="w-4 h-4 mr-2" />
                           Enter Results
                         </Button>
@@ -316,10 +323,10 @@ const LabsResults = () => {
             </div>
 
             <div className="flex items-center gap-2 pt-2">
-              <Button variant="outline" size="sm" type="button" onClick={() => toast.info("File upload simulated")}>
-                <Upload className="w-4 h-4 mr-2" />
-                Attach File/Image
-              </Button>
+              <div className="flex items-center gap-2">
+                <Label className="text-sm">Attach File/Image</Label>
+                <Input type="file" accept="image/*,.pdf" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
+              </div>
             </div>
           </div>
 

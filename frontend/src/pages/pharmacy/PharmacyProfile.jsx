@@ -19,6 +19,7 @@ import {
   Mail
 } from "lucide-react";
 import { toast } from "sonner";
+import { profileService } from "@/services/api";
 
 const navItems = [
   { name: "Dashboard", href: "/pharmacy/dashboard", icon: LayoutDashboard },
@@ -30,16 +31,27 @@ const navItems = [
 
 const PharmacyProfile = () => {
   const { user } = useUser();
-  const pharmacyProfile = user;
 
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState(pharmacyProfile || {});
+  const [formData, setFormData] = useState({});
 
   useEffect(() => {
-    if (pharmacyProfile) {
-      setFormData(pharmacyProfile);
-    }
-  }, [pharmacyProfile]);
+    const load = async () => {
+      try {
+        const data = await profileService.pharmacy.get();
+        setFormData({
+          name: `${data.first_name || ""} ${data.last_name || ""}`.trim() || data.username,
+          email: data.email || "",
+          phone: data.phone || "",
+          license: data.license_number || "",
+          address: data.address || "",
+        });
+      } catch (e) {
+        // ignore
+      }
+    };
+    load();
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -58,14 +70,26 @@ const PharmacyProfile = () => {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setLoading(true);
-    setTimeout(() => {
-      // updateUser("pharmacy", formData);
-      console.log("Update user:", formData);
+    try {
+      const [firstName, ...rest] = (formData.name || "").split(" ");
+      const lastName = rest.join(" ");
+      const payload = {
+        first_name: firstName || "",
+        last_name: lastName || "",
+        email: formData.email || "",
+        phone: formData.phone || "",
+        license_number: formData.license || "",
+        address: formData.address || "",
+      };
+      await profileService.pharmacy.update(payload);
       setLoading(false);
       toast.success("Profile updated successfully");
-    }, 1000);
+    } catch {
+      setLoading(false);
+      toast.error("Something went wrong");
+    }
   };
 
   return (

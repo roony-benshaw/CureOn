@@ -170,7 +170,7 @@ const AddPharmacyModal = ({ open, onOpenChange, onPharmacyAdded }) => {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="pharmacy@medicare.com"
+                  placeholder="pharmacy@cureon.com"
                   value={formData.email}
                   onChange={(e) => handleInputChange("email", e.target.value)}
                 />

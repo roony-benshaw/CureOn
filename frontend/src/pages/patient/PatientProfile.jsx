@@ -15,11 +15,11 @@ import {
 } from "@/components/ui/select";
 import { User, Camera, Save, Activity, FileText, AlertCircle, LayoutDashboard, Calendar, Pill, HeartPulse, Settings } from "lucide-react";
 import { toast } from "sonner";
+import { profileService } from "@/services/api";
 
 const PatientProfile = () => {
   const { t } = useTranslation();
   const { user } = useUser();
-  const patientProfile = user;
   
   const navItems = [
     { name: t('common.dashboard'), href: "/patient/dashboard", icon: LayoutDashboard },
@@ -31,13 +31,32 @@ const PatientProfile = () => {
   ];
 
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState(patientProfile || {});
+  const [formData, setFormData] = useState({});
 
   useEffect(() => {
-    if (patientProfile) {
-      setFormData(patientProfile);
-    }
-  }, [patientProfile]);
+    const load = async () => {
+      try {
+        const data = await profileService.patient.get();
+        setFormData({
+          name: `${data.first_name || ""} ${data.last_name || ""}`.trim() || data.username,
+          email: data.email || "",
+          phone: data.phone || "",
+          address: data.address || "",
+          dob: data.date_of_birth || "",
+          bloodType: data.blood_type || "",
+          height: data.height_cm || "",
+          weight: data.weight_kg || "",
+          allergies: data.allergies || "",
+          chronicDiseases: data.chronic_diseases || "",
+          pastDiseases: data.past_diseases || "",
+          familyHistory: data.family_history || "",
+        });
+      } catch (e) {
+        // ignore
+      }
+    };
+    load();
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -60,15 +79,34 @@ const PatientProfile = () => {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      // updateUser("patient", formData);
-      console.log("Update user:", formData);
+    try {
+      const [firstName, ...rest] = (formData.name || "").split(" ");
+      const lastName = rest.join(" ");
+      const payload = {
+        first_name: firstName || "",
+        last_name: lastName || "",
+        email: formData.email || "",
+        phone: formData.phone || "",
+        address: formData.address || "",
+        date_of_birth: formData.dob || null,
+        blood_type: formData.bloodType || "",
+        height_cm: formData.height ? Number(formData.height) : null,
+        weight_kg: formData.weight ? Number(formData.weight) : null,
+        allergies: formData.allergies || "",
+        chronic_diseases: formData.chronicDiseases || "",
+        past_diseases: formData.pastDiseases || "",
+        family_history: formData.familyHistory || "",
+      };
+      const updated = await profileService.patient.update(payload);
       setLoading(false);
       toast.success(t('profile.success'));
-    }, 1000);
+      setFormData((prev) => ({ ...prev, email: updated.email }));
+    } catch (e) {
+      setLoading(false);
+      toast.error(t('common.error'));
+    }
   };
 
   const handleCancel = () => {

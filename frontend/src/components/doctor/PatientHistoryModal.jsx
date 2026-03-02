@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,46 +10,47 @@ import { FileText, Pill, Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { appointmentsService } from "@/services/api";
 
 const PatientHistoryModal = ({ open, onOpenChange, patient }) => {
-  const [uploadedFiles, setUploadedFiles] = useState([]);
   const fileInputRef = useRef(null);
+  const [loading, setLoading] = useState(false);
+  const [Rx, setRx] = useState([]);
+  const [labRecords, setLabRecords] = useState([]);
+  const [patientInfo, setPatientInfo] = useState(null);
 
-  if (!patient) return null;
+  useEffect(() => {
+    const load = async () => {
+      if (!open || !patient?.id) return;
+      setLoading(true);
+      try {
+        const data = await appointmentsService.doctorPatientHistory(patient.id);
+        setPatientInfo(data.patient || null);
+        setRx(data.prescriptions || []);
+        setLabRecords(data.lab_results || []);
+      } catch {
+        setPatientInfo(null);
+        setRx([]);
+        setLabRecords([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [open, patient?.id]);
 
-  const prescriptions = [
-    { id: 1, medicine: "Amoxicillin 500mg", dosage: "1 tablet, 3 times daily", duration: "7 days", date: "Jan 20, 2026", doctor: "Dr. Sarah Johnson" },
-    { id: 2, medicine: "Paracetamol 650mg", dosage: "1 tablet as needed", duration: "5 days", date: "Jan 15, 2026", doctor: "Dr. Sarah Johnson" },
-    { id: 3, medicine: "Vitamin D3", dosage: "1 capsule daily", duration: "30 days", date: "Dec 28, 2025", doctor: "Dr. Michael Chen" },
-  ];
-
-  const records = [
-    { id: 1, name: "Blood Test Report", type: "Lab Report", date: "Jan 18, 2026", uploadedBy: "Doctor" },
-    { id: 2, name: "Chest X-Ray", type: "Imaging", date: "Jan 16, 2026", uploadedBy: "Doctor" },
-    { id: 3, name: "Previous Medical History", type: "Document", date: "Jan 10, 2026", uploadedBy: "Patient" },
-    { id: 4, name: "Allergy Test Results", type: "Lab Report", date: "Dec 20, 2025", uploadedBy: "Doctor" },
-    ...uploadedFiles.map((file, index) => ({
-      id: 100 + index,
-      name: file.name,
-      type: "Uploaded Document",
-      date: file.date,
-      uploadedBy: "Doctor",
-    })),
-  ];
+  const buildAttachmentUrl = (path) => {
+    if (!path) return null;
+    const p = String(path);
+    if (p.startsWith("http")) return p;
+    if (p.startsWith("/media/")) return `http://127.0.0.1:8000${p}`;
+    return `http://127.0.0.1:8000/media/${p}`;
+  };
 
   const handleFileUpload = (event) => {
     const files = event.target.files;
     if (files && files.length > 0) {
-      const file = files[0];
-      const newFile = {
-        name: file.name,
-        date: new Date().toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        }),
-      };
-      setUploadedFiles([...uploadedFiles, newFile]);
+      // Future: implement backend upload to patient records
     }
     // Reset input
     if (fileInputRef.current) {
@@ -62,12 +63,12 @@ const PatientHistoryModal = ({ open, onOpenChange, patient }) => {
       <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="font-display text-xl">
-            Patient History - {patient.name}
+            Patient History - {patient?.name || "Patient"}
           </DialogTitle>
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <span>{patient.age} years old</span>
+            <span>{(patientInfo?.age ?? patient?.age) || "-"} years old</span>
             <span>•</span>
-            <span className="text-primary font-medium">{patient.condition}</span>
+            <span className="text-primary font-medium">{patient?.condition || "-"}</span>
           </div>
         </DialogHeader>
 
@@ -85,20 +86,31 @@ const PatientHistoryModal = ({ open, onOpenChange, patient }) => {
 
           <div className="flex-1 overflow-y-auto mt-4">
             <TabsContent value="prescriptions" className="mt-0 space-y-3">
-              {prescriptions.map((rx) => (
-                <div key={rx.id} className="p-4 rounded-xl bg-secondary/50 border border-border">
-                  <div className="flex items-start justify-between mb-2">
+              {Rx.length === 0 && (
+                <div className="p-4 rounded-xl bg-secondary/50 border border-border text-sm text-muted-foreground">
+                  No prescriptions yet
+                </div>
+              )}
+              {Rx.map((rx) => (
+                <div key={rx.id} className="p-4 rounded-xl bg-secondary/50 border border-border space-y-2">
+                  <div className="flex items-start justify-between">
                     <div>
-                      <h4 className="font-semibold text-foreground">{rx.medicine}</h4>
-                      <p className="text-sm text-muted-foreground">{rx.doctor}</p>
+                      <h4 className="font-semibold text-foreground">{rx.diagnosis || "Prescription"}</h4>
+                      <p className="text-sm text-muted-foreground">Dr. {rx.doctor_name}</p>
                     </div>
-                    <span className="text-xs text-muted-foreground">{rx.date}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(rx.created_at).toLocaleDateString()}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-4 text-sm">
-                    <span className="text-foreground">{rx.dosage}</span>
-                    <span className="text-muted-foreground">•</span>
-                    <span className="text-muted-foreground">{rx.duration}</span>
-                  </div>
+                  {(rx.items || []).map((item) => (
+                    <div key={item.id} className="flex items-center gap-4 text-sm">
+                      <span className="text-foreground">{item.name}</span>
+                      <span className="text-muted-foreground">•</span>
+                      <span className="text-muted-foreground">{item.dosage}</span>
+                      <span className="text-muted-foreground">•</span>
+                      <span className="text-muted-foreground">{item.duration}</span>
+                    </div>
+                  ))}
                 </div>
               ))}
             </TabsContent>
@@ -122,30 +134,43 @@ const PatientHistoryModal = ({ open, onOpenChange, patient }) => {
                 </Label>
               </div>
 
-              {records.map((record) => (
-                <div key={record.id} className="p-4 rounded-xl bg-secondary/50 border border-border flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <FileText className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-foreground">{record.name}</h4>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>{record.type}</span>
-                        <span>•</span>
-                        <span>{record.date}</span>
-                        <span>•</span>
-                        <span className={record.uploadedBy === "Doctor" ? "text-primary" : "text-accent"}>
-                          {record.uploadedBy}
-                        </span>
+              {labRecords.length === 0 && (
+                <div className="p-4 rounded-xl bg-secondary/50 border border-border text-sm text-muted-foreground">
+                  No records yet
+                </div>
+              )}
+              {labRecords.map((lr) => {
+                const url = buildAttachmentUrl(lr.attachment);
+                const name = Array.isArray(lr.tests) ? lr.tests.join(", ") : "Lab Report";
+                return (
+                  <div key={lr.id} className="p-4 rounded-xl bg-secondary/50 border border-border flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                        <FileText className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-foreground">{name}</h4>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>Lab Report</span>
+                          <span>•</span>
+                          <span>{new Date(lr.created_at).toLocaleDateString()}</span>
+                          <span>•</span>
+                          <span className="text-primary">Doctor</span>
+                        </div>
                       </div>
                     </div>
+                    <Button variant="ghost" size="sm" disabled={!url} asChild={!!url}>
+                      {url ? (
+                        <a href={url} download>
+                          <Download className="w-4 h-4" />
+                        </a>
+                      ) : (
+                        <Download className="w-4 h-4 opacity-50" />
+                      )}
+                    </Button>
                   </div>
-                  <Button variant="ghost" size="sm">
-                    <Download className="w-4 h-4" />
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </TabsContent>
           </div>
         </Tabs>

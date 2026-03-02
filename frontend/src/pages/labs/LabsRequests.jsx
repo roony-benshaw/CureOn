@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +47,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { appointmentsService } from "@/services/api";
 
 const navItems = [
   { name: "Dashboard", href: "/labs/dashboard", icon: LayoutDashboard },
@@ -70,58 +71,34 @@ const LabsRequests = () => {
     priority: []
   });
 
-  const [requests, setRequests] = useState([
-    {
-      id: "LAB-001",
-      patient: "Emily Rodriguez",
-      doctor: "Dr. Sarah Johnson",
-      tests: ["CBC", "Lipid Profile"],
-      priority: "Routine",
-      status: "Pending",
-      date: "2024-02-03",
-      time: "09:15 AM",
-    },
-    {
-      id: "LAB-002",
-      patient: "David Chen",
-      doctor: "Dr. Michael Chang",
-      tests: ["Thyroid Function"],
-      priority: "Urgent",
-      status: "Pending",
-      date: "2024-02-03",
-      time: "10:00 AM",
-    },
-    {
-      id: "LAB-003",
-      patient: "Sarah Williams",
-      doctor: "Dr. Lisa Anderson",
-      tests: ["Urinalysis"],
-      priority: "Routine",
-      status: "In Progress",
-      date: "2024-02-03",
-      time: "08:30 AM",
-    },
-    {
-      id: "LAB-004",
-      patient: "James Wilson",
-      doctor: "Dr. Robert Smith",
-      tests: ["HbA1c", "Blood Glucose"],
-      priority: "Routine",
-      status: "Pending",
-      date: "2024-02-03",
-      time: "11:20 AM",
-    },
-    {
-      id: "LAB-005",
-      patient: "Maria Garcia",
-      doctor: "Dr. Emily Davis",
-      tests: ["Liver Function Test"],
-      priority: "Urgent",
-      status: "Pending",
-      date: "2024-02-03",
-      time: "11:45 AM",
-    }
-  ]);
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const res = await appointmentsService.lab.listRequests();
+        const mapped = (res || []).map(r => ({
+          id: `LAB-${String(r.id).padStart(3, '0')}`,
+          rawId: r.id,
+          patient: r.patient_name,
+          doctor: `Dr. ${r.doctor_name}`,
+          tests: r.tests || [],
+          priority: (r.priority || 'ROUTINE').replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()),
+          status: (r.status || 'PENDING').replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()),
+          date: new Date(r.created_at).toISOString().split('T')[0],
+          time: new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        }));
+        setRequests(mapped);
+      } catch {
+        setRequests([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
 
   const handleFilterChange = (type, value) => {
     setFilters(prev => {
@@ -141,7 +118,7 @@ const LabsRequests = () => {
     setSortOrder(prev => prev === "desc" ? "asc" : "desc");
   };
 
-  const filteredRequests = requests.filter(req => {
+  const filteredRequests = useMemo(() => requests.filter(req => {
     const matchesSearch = 
       req.patient.toLowerCase().includes(searchTerm.toLowerCase()) ||
       req.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -155,7 +132,7 @@ const LabsRequests = () => {
     const dateA = new Date(`${a.date} ${a.time}`);
     const dateB = new Date(`${b.date} ${b.time}`);
     return sortOrder === "desc" ? dateB - dateA : dateA - dateB;
-  });
+  }), [requests, searchTerm, filters, sortOrder]);
 
   const handleAction = (request, action) => {
     setSelectedRequest(request);
@@ -168,19 +145,19 @@ const LabsRequests = () => {
     setIsDetailsDialogOpen(true);
   };
 
-  const confirmAction = () => {
+  const confirmAction = async () => {
     if (!selectedRequest || !processAction) return;
 
-    const newStatus = processAction === 'accept' ? 'In Progress' : 'Rejected';
-    
-    setRequests(requests.map(req => 
-      req.id === selectedRequest.id 
-        ? { ...req, status: newStatus } 
-        : req
-    ));
-
-    toast.success(`Request ${selectedRequest.id} ${processAction === 'accept' ? 'accepted' : 'rejected'} successfully`);
-    setIsProcessDialogOpen(false);
+    const newStatus = processAction === 'accept' ? 'IN_PROGRESS' : 'REJECTED';
+    try {
+      await appointmentsService.lab.updateStatus(selectedRequest.rawId, newStatus);
+      setRequests(prev => prev.map(req => req.id === selectedRequest.id ? { ...req, status: newStatus.replace('_',' ').replace(/\b\w/g,c=>c.toUpperCase()) } : req));
+      toast.success(`Request ${selectedRequest.id} ${processAction === 'accept' ? 'accepted' : 'rejected'} successfully`);
+    } catch {
+      toast.error("Failed to update request");
+    } finally {
+      setIsProcessDialogOpen(false);
+    }
   };
 
   const getPriorityColor = (priority) => {
@@ -327,7 +304,7 @@ const LabsRequests = () => {
                           variant="ghost" 
                           size="icon" 
                           onClick={() => handleAction(req, 'accept')} 
-                          disabled={req.status !== 'Pending'}
+                          disabled={(req.status || '').toLowerCase() !== 'pending'}
                           title="Accept Request"
                           className="text-green-600 hover:text-green-700 hover:bg-green-50"
                         >
@@ -337,7 +314,7 @@ const LabsRequests = () => {
                           variant="ghost" 
                           size="icon" 
                           onClick={() => handleAction(req, 'reject')} 
-                          disabled={req.status !== 'Pending'}
+                          disabled={(req.status || '').toLowerCase() !== 'pending'}
                           title="Reject Request"
                           className="text-destructive hover:text-destructive hover:bg-destructive/10"
                         >

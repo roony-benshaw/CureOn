@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { CalendarDays, Clock } from "lucide-react";
-import { format } from "date-fns";
+import { format, startOfToday } from "date-fns";
 import { enUS, hi, te } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
@@ -113,7 +113,7 @@ const RescheduleModal = ({
               mode="single"
               selected={selectedDate}
               onSelect={setSelectedDate}
-              disabled={(date) => date < new Date()}
+              disabled={(date) => date < startOfToday()}
               className={cn("rounded-md border pointer-events-auto")}
             />
           </div>

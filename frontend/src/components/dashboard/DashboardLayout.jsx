@@ -63,7 +63,7 @@ const DashboardLayout = ({
                 <Stethoscope className="w-5 h-5 text-primary-foreground" />
               </div>
               <span className="font-display font-bold text-lg text-sidebar-foreground">
-                MediCare
+                CureOn
               </span>
             </Link>
             <button

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { format } from "date-fns";
 import { getDateLocale } from "@/lib/utils";
@@ -22,6 +22,7 @@ import {
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
+import { appointmentsService } from "@/services/api";
 
 const PatientRecords = () => {
   const { t } = useTranslation();
@@ -51,48 +52,33 @@ const PatientRecords = () => {
     u5: null,
   });
 
-  const doctorRecords = [
-    {
-      id: "d1",
-      name: "Blood Test Results",
-      type: "labReport",
-      date: new Date(2026, 0, 15),
-      fileType: "pdf",
-      size: "245 KB",
-      uploadedBy: "doctor",
-      doctorName: "Dr. Sarah Johnson",
-    },
-    {
-      id: "d2",
-      name: "Chest X-Ray",
-      type: "imaging",
-      date: new Date(2026, 0, 10),
-      fileType: "image",
-      size: "1.2 MB",
-      uploadedBy: "doctor",
-      doctorName: "Dr. Michael Chen",
-    },
-    {
-      id: "d3",
-      name: "General Checkup Report",
-      type: "consultation",
-      date: new Date(2025, 11, 20),
-      fileType: "pdf",
-      size: "156 KB",
-      uploadedBy: "doctor",
-      doctorName: "Dr. Sarah Johnson",
-    },
-    {
-      id: "d4",
-      name: "MRI Scan Results",
-      type: "imaging",
-      date: new Date(2025, 11, 5),
-      fileType: "image",
-      size: "3.4 MB",
-      uploadedBy: "doctor",
-      doctorName: "Dr. Lisa Anderson",
-    },
-  ];
+  const [doctorRecords, setDoctorRecords] = useState([]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await appointmentsService.lab.patientResults();
+        const mapped = (res || []).map(r => ({
+          id: `LAB-${String(r.id).padStart(3,'0')}`,
+          name: Array.isArray(r.tests) ? r.tests.join(", ") : String(r.tests || "Lab Report"),
+          type: "labReport",
+          date: new Date(r.created_at),
+          fileType: r.attachment ? (String(r.attachment).toLowerCase().endsWith('.pdf') ? 'pdf' : 'file') : 'none',
+          size: "",
+          uploadedBy: "lab",
+          doctorName: `Dr. ${r.doctor_name}`,
+          attachment: r.attachment,
+          result_value: r.result_value,
+          reference_range: r.reference_range,
+          clinical_notes: r.clinical_notes,
+        }));
+        setDoctorRecords(mapped);
+      } catch {
+        setDoctorRecords([]);
+      }
+    };
+    load();
+  }, []);
 
   const handleFileUpload = (recordId, event) => {
     const files = event.target.files;
@@ -114,8 +100,26 @@ const PatientRecords = () => {
     }
   };
 
-  const handleDownload = (fileName) => {
-    toast.success(t('records.downloading', { name: fileName }));
+  const buildAttachmentUrl = (path) => {
+    if (!path) return null;
+    const p = String(path);
+    if (p.startsWith("http")) return p;
+    if (p.startsWith("/media/")) return `http://127.0.0.1:8000${p}`;
+    return `http://127.0.0.1:8000/media/${p}`;
+  };
+  const handleDownload = (record) => {
+    const url = buildAttachmentUrl(record.attachment);
+    if (url) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast.success(t('records.downloading', { name: record.name }));
+    } else {
+      toast.info(t('records.noFile'));
+    }
   };
 
   const RecordCard = ({ record }) => (
@@ -145,7 +149,7 @@ const PatientRecords = () => {
           </div>
         </div>
       </div>
-      <Button variant="ghost" size="sm" onClick={() => handleDownload(record.name)}>
+      <Button variant="ghost" size="sm" onClick={() => handleDownload(record)}>
         <Download className="w-4 h-4" />
       </Button>
     </div>

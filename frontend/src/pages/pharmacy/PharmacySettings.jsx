@@ -75,7 +75,7 @@ const PharmacySettings = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Contact Email</Label>
-                <Input id="email" defaultValue="pharmacy@medicare.com" />
+                <Input id="email" defaultValue="pharmacy@cureon.com" />
               </div>
             </div>
             <div className="space-y-2">

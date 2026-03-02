@@ -10,13 +10,11 @@ import {
   Mail,
   Phone,
   ArrowLeft,
-  Award,
-  Clock,
-  MapPin,
-  User,
   Users,
   Pill,
-  FlaskConical
+  FlaskConical,
+  MapPin,
+  Building2
 } from "lucide-react";
 import {
   Table,
@@ -38,19 +36,19 @@ const navItems = [
   { name: "Settings", href: "/admin/settings", icon: Settings },
 ];
 
-const AdminDoctorDetails = () => {
+const AdminLabDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [doctor, setDoctor] = useState(null);
+  const [lab, setLab] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchDetail = async () => {
       try {
-        const data = await adminService.getDoctorDetail(id);
-        setDoctor(data);
+        const data = await adminService.getLabDetail(id);
+        setLab(data);
       } catch (error) {
-        console.error("Failed to fetch doctor details", error);
+        console.error("Failed to fetch lab details", error);
       } finally {
         setLoading(false);
       }
@@ -62,105 +60,104 @@ const AdminDoctorDetails = () => {
     return <DashboardLayout navItems={navItems} userType="admin"><div>Loading...</div></DashboardLayout>;
   }
 
-  if (!doctor) {
-    return <DashboardLayout navItems={navItems} userType="admin"><div>Doctor not found</div></DashboardLayout>;
+  if (!lab) {
+    return <DashboardLayout navItems={navItems} userType="admin"><div>Lab not found</div></DashboardLayout>;
   }
 
-  const name = (doctor.first_name || doctor.last_name) ? `${doctor.first_name} ${doctor.last_name}` : doctor.username;
+  const name = lab.username;
 
   return (
     <DashboardLayout navItems={navItems} userType="admin">
       <div className="space-y-6">
-        {/* Header with Back Button */}
         <div className="flex items-center gap-4">
-          <Button variant="outline" size="icon" onClick={() => navigate("/admin/doctors")}>
+          <Button variant="outline" size="icon" onClick={() => navigate("/admin/labs")}>
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <h1 className="font-display text-2xl font-bold text-foreground">Doctor Details</h1>
-            <p className="text-muted-foreground">View detailed information and patient history</p>
+            <h1 className="font-display text-2xl font-bold text-foreground">Lab Details</h1>
+            <p className="text-muted-foreground">View information and test requests</p>
           </div>
         </div>
 
-        {/* Doctor Profile Card */}
         <div className="dashboard-card p-6">
           <div className="flex flex-col md:flex-row gap-6 items-start">
             <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-              <span className="text-primary font-bold text-3xl">{name.split(" ")[1]?.charAt(0) || name.charAt(0)}</span>
+              <span className="text-primary font-bold text-3xl">{name.charAt(0).toUpperCase()}</span>
             </div>
             
             <div className="flex-1 space-y-4">
               <div>
                 <h2 className="text-2xl font-bold text-foreground">{name}</h2>
-                <p className="text-lg text-muted-foreground font-medium">{doctor.specialization || "General Physician"}</p>
+                <p className="text-lg text-muted-foreground font-medium">License: {lab.license_number || "N/A"}</p>
               </div>
 
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="flex items-center gap-3 text-sm">
                   <Mail className="w-4 h-4 text-primary" />
-                  <span>{doctor.email}</span>
+                  <span>{lab.email}</span>
                 </div>
                 <div className="flex items-center gap-3 text-sm">
                   <Phone className="w-4 h-4 text-primary" />
-                  <span>{doctor.phone || "No phone"}</span>
+                  <span>{lab.phone || "No phone"}</span>
                 </div>
                 <div className="flex items-center gap-3 text-sm">
-                  <Award className="w-4 h-4 text-primary" />
-                  <span>Patients Treated: {doctor.patients_treated_count || 0}</span>
+                  <MapPin className="w-4 h-4 text-primary" />
+                  <span>{lab.address || "No address"}</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                  <Building2 className="w-4 h-4 text-primary" />
+                  <span>Joined: {new Date(lab.date_joined).toLocaleDateString()}</span>
                 </div>
               </div>
-
-              {doctor.about && (
-                <div className="pt-2">
-                  <h3 className="font-semibold mb-1">About</h3>
-                  <p className="text-muted-foreground text-sm leading-relaxed">{doctor.about}</p>
-                </div>
-              )}
             </div>
           </div>
         </div>
 
-        {/* Patients Treated Table */}
         <div className="space-y-4">
           <h2 className="font-display text-xl font-semibold text-foreground flex items-center gap-2">
-            <User className="w-5 h-5 text-primary" />
-            Appointments History
+            <FlaskConical className="w-5 h-5 text-primary" />
+            Lab Test Requests
           </h2>
-          
           <div className="dashboard-card overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Patient Name</TableHead>
                   <TableHead>Date</TableHead>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Type</TableHead>
+                  <TableHead>Patient</TableHead>
+                  <TableHead>Doctor</TableHead>
+                  <TableHead>Tests</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Results</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {doctor.appointments && doctor.appointments.length > 0 ? (
-                  doctor.appointments.map((appt) => (
-                    <TableRow key={appt.id}>
-                      <TableCell className="font-medium">{appt.patient_name}</TableCell>
-                      <TableCell>{appt.date}</TableCell>
-                      <TableCell>{appt.time_slot}</TableCell>
-                      <TableCell>{appt.visit_type}</TableCell>
+                {lab.lab_requests && lab.lab_requests.length > 0 ? (
+                  lab.lab_requests.map((req) => (
+                    <TableRow key={req.id}>
+                      <TableCell>{new Date(req.created_at).toLocaleDateString()}</TableCell>
+                      <TableCell>{req.patient_name}</TableCell>
+                      <TableCell>{req.doctor_name}</TableCell>
+                      <TableCell>{req.tests && req.tests.join(", ")}</TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          appt.status === 'COMPLETED' ? 'bg-green-100 text-green-800' : 
-                          appt.status === 'UPCOMING' ? 'bg-blue-100 text-blue-800' : 
-                          'bg-gray-100 text-gray-800'
+                          req.status === 'COMPLETED' ? 'bg-green-100 text-green-800' : 
+                          req.status === 'REJECTED' ? 'bg-red-100 text-red-800' :
+                          'bg-yellow-100 text-yellow-800'
                         }`}>
-                          {appt.status}
+                          {req.status}
                         </span>
+                      </TableCell>
+                      <TableCell>
+                        {req.attachment ? (
+                          <a href={req.attachment} target="_blank" rel="noreferrer" className="text-primary hover:underline">View</a>
+                        ) : req.result_value || "-"}
                       </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
-                      No appointments found.
+                    <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">
+                      No lab requests found.
                     </TableCell>
                   </TableRow>
                 )}
@@ -173,4 +170,4 @@ const AdminDoctorDetails = () => {
   );
 };
 
-export default AdminDoctorDetails;
+export default AdminLabDetails;

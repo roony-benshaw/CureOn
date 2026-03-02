@@ -3,7 +3,13 @@ from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
-from .views import RegisterView, AdminCreateStaffView, UserDetailView, UsersListView, AdminUserUpdateView, DoctorsPublicListView
+from .views import RegisterView, AdminCreateStaffView, UserDetailView, UsersListView, AdminUserUpdateView, DoctorsPublicListView, LabsPublicListView, PatientProfileView, DoctorProfileView, PharmacyProfileView, LabProfileView, AdminProfileView
+from .views_admin import (
+    AdminDoctorDetailView,
+    AdminPatientDetailView,
+    AdminPharmacyDetailView,
+    AdminLabDetailView
+)
 
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
@@ -14,4 +20,16 @@ urlpatterns = [
     path('users/', UsersListView.as_view(), name='users_list'),
     path('users/<int:pk>/', AdminUserUpdateView.as_view(), name='users_update'),
     path('doctors/', DoctorsPublicListView.as_view(), name='doctors_public_list'),
+    path('labs/', LabsPublicListView.as_view(), name='labs_public_list'),
+    path('patient/profile/', PatientProfileView.as_view(), name='patient_profile'),
+    path('doctor/profile/', DoctorProfileView.as_view(), name='doctor_profile'),
+    path('pharmacy/profile/', PharmacyProfileView.as_view(), name='pharmacy_profile'),
+    path('labs/profile/', LabProfileView.as_view(), name='lab_profile'),
+    path('admin/profile/', AdminProfileView.as_view(), name='admin_profile'),
+    
+    # Admin Detail Views
+    path('admin/doctors/<int:id>/', AdminDoctorDetailView.as_view(), name='admin_doctor_detail'),
+    path('admin/patients/<int:id>/', AdminPatientDetailView.as_view(), name='admin_patient_detail'),
+    path('admin/pharmacy/<int:id>/', AdminPharmacyDetailView.as_view(), name='admin_pharmacy_detail'),
+    path('admin/labs/<int:id>/', AdminLabDetailView.as_view(), name='admin_lab_detail'),
 ]

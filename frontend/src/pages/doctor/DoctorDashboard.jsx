@@ -2,6 +2,7 @@ import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import StatCard from "@/components/dashboard/StatCard";
 import AppointmentCard from "@/components/dashboard/AppointmentCard";
 import { useUser } from "@/context/UserContext";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard,
@@ -14,6 +15,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { appointmentsService } from "@/services/api";
 
 const navItems = [
   { name: "Dashboard", href: "/doctor/dashboard", icon: LayoutDashboard },
@@ -26,41 +28,87 @@ const navItems = [
 const DoctorDashboard = () => {
   const navigate = useNavigate();
   const { user } = useUser();
-  // const doctorProfile = getUser("doctor");
+  const [appointments, setAppointments] = useState([]);
+  const [patients, setPatients] = useState([]);
+  const [availability, setAvailability] = useState([]);
 
-  const todayAppointments = [
-    {
-      patientName: "Emily Rodriguez",
-      date: "Today",
-      time: "10:00 AM",
-      type: "video",
-      status: "upcoming",
-      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80",
-    },
-    {
-      patientName: "James Wilson",
-      date: "Today",
-      time: "11:30 AM",
-      type: "in-person",
-      status: "upcoming",
-    },
-    {
-      patientName: "Sarah Chen",
-      date: "Today",
-      time: "2:00 PM",
-      type: "video",
-      status: "upcoming",
-      avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80",
-    },
-  ];
+  const mapType = (t) => (t === "IN_PERSON" ? "in-person" : "video");
 
-  const weeklySchedule = [
-    { day: "Mon", slots: 8, booked: 6 },
-    { day: "Tue", slots: 8, booked: 8 },
-    { day: "Wed", slots: 6, booked: 4 },
-    { day: "Thu", slots: 8, booked: 7 },
-    { day: "Fri", slots: 6, booked: 3 },
-  ];
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [appts, pats, avail] = await Promise.all([
+          appointmentsService.doctorAppointments(),
+          appointmentsService.doctorPatients(),
+          appointmentsService.doctorAvailability.list(),
+        ]);
+        setAppointments(appts || []);
+        setPatients(pats || []);
+        setAvailability(avail || []);
+      } catch {
+        setAppointments([]);
+        setPatients([]);
+        setAvailability([]);
+      }
+    };
+    load();
+  }, []);
+
+  const todayAppointments = useMemo(() => {
+    const today = new Date();
+    const isSameDay = (d) => {
+      const dd = new Date(d);
+      return dd.getFullYear() === today.getFullYear() && dd.getMonth() === today.getMonth() && dd.getDate() === today.getDate();
+    };
+    return (appointments || [])
+      .filter((a) => a.status === "UPCOMING" && isSameDay(a.date))
+      .map((a) => ({
+        patientName: a.patient_name || "Patient",
+        date: "Today",
+        time: a.time_slot,
+        type: mapType(a.visit_type),
+        status: "upcoming",
+      }));
+  }, [appointments]);
+
+  const stats = useMemo(() => {
+    const todayCount = todayAppointments.length;
+    const totalPatients = patients.length;
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthlyConsults = (appointments || []).filter((a) => {
+      const d = new Date(a.date);
+      return a.status === "COMPLETED" && d >= monthStart && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }).length;
+    return { todayCount, totalPatients, monthlyConsults };
+  }, [todayAppointments, patients, appointments]);
+
+  const generateSlotsCount = (start, end) => {
+    // count 30-min slots
+    const [sh, sm] = String(start).split(":").map((x) => parseInt(x, 10));
+    const [eh, em] = String(end).split(":").map((x) => parseInt(x, 10));
+    const startMin = sh * 60 + sm;
+    const endMin = eh * 60 + em;
+    return Math.max(0, Math.floor((endMin - startMin) / 30));
+  };
+
+  const weeklyOverview = useMemo(() => {
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const slotsByDay = new Array(7).fill(0);
+    availability.forEach((rng) => {
+      const count = generateSlotsCount(rng.start_time, rng.end_time);
+      slotsByDay[rng.weekday] += count;
+    });
+    const bookedByDay = new Array(7).fill(0);
+    (appointments || []).forEach((a) => {
+      const d = new Date(a.date);
+      bookedByDay[d.getDay()] += 1;
+    });
+    return days.slice(1, 6).map((label, idx) => {
+      const dayIndex = idx + 1; // Mon-Fri
+      return { day: label, slots: slotsByDay[dayIndex] || 0, booked: bookedByDay[dayIndex] || 0 };
+    });
+  }, [availability, appointments]);
 
   return (
     <DashboardLayout
@@ -74,7 +122,7 @@ const DoctorDashboard = () => {
             Good morning, {user?.first_name || user?.username || "Doctor"}! 🩺
           </h1>
           <p className="text-muted-foreground mt-1">
-            You have 5 appointments scheduled for today
+            You have {stats.todayCount} appointments scheduled for today
           </p>
         </div>
 
@@ -83,7 +131,7 @@ const DoctorDashboard = () => {
           <div onClick={() => navigate("/doctor/appointments")} className="cursor-pointer transition-transform hover:scale-105">
             <StatCard
               title="Today's Appointments"
-              value={5}
+              value={stats.todayCount}
               icon={Calendar}
               iconColor="text-primary"
               iconBg="bg-primary/10"
@@ -92,7 +140,7 @@ const DoctorDashboard = () => {
           <div onClick={() => navigate("/doctor/patients")} className="cursor-pointer transition-transform hover:scale-105">
             <StatCard
               title="Total Patients"
-              value={248}
+              value={stats.totalPatients}
               icon={UserCheck}
               iconColor="text-success"
               iconBg="bg-success/10"
@@ -101,7 +149,7 @@ const DoctorDashboard = () => {
           <div onClick={() => navigate("/doctor/appointments")} className="cursor-pointer transition-transform hover:scale-105">
             <StatCard
               title="Monthly Consultations"
-              value={32}
+              value={stats.monthlyConsults}
               icon={Video}
               iconColor="text-accent"
               iconBg="bg-accent/10"
@@ -140,7 +188,7 @@ const DoctorDashboard = () => {
             </h2>
             <div className="dashboard-card p-5">
               <div className="space-y-4">
-                {weeklySchedule.map((day) => (
+                {weeklyOverview.map((day) => (
                   <div key={day.day} className="flex items-center gap-4">
                     <span className="w-10 text-sm font-medium text-muted-foreground">
                       {day.day}
@@ -160,7 +208,14 @@ const DoctorDashboard = () => {
               <div className="mt-4 pt-4 border-t border-border">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Weekly capacity</span>
-                  <span className="font-medium text-foreground">75%</span>
+                  <span className="font-medium text-foreground">
+                    {(() => {
+                      const totalSlots = weeklyOverview.reduce((s, d) => s + d.slots, 0);
+                      const booked = weeklyOverview.reduce((s, d) => s + d.booked, 0);
+                      const pct = totalSlots ? Math.round((booked / totalSlots) * 100) : 0;
+                      return `${pct}%`;
+                    })()}
+                  </span>
                 </div>
               </div>
             </div>

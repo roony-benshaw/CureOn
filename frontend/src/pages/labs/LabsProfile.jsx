@@ -1,6 +1,8 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   LayoutDashboard,
   FlaskConical,
@@ -17,6 +19,8 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { profileService } from "@/services/api";
+import { toast } from "sonner";
 
 const navItems = [
   { name: "Dashboard", href: "/labs/dashboard", icon: LayoutDashboard },
@@ -28,12 +32,66 @@ const navItems = [
 ];
 
 const LabsProfile = () => {
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({});
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const data = await profileService.labs.get();
+        setFormData({
+          name: `${data.first_name || ""} ${data.last_name || ""}`.trim() || data.username,
+          email: data.email || "",
+          phone: data.phone || "",
+          address: data.address || "",
+          license: data.license_number || "",
+        });
+      } catch {}
+    };
+    load();
+  }, []);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((p) => ({ ...p, [name]: value }));
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const [firstName, ...rest] = (formData.name || "").split(" ");
+      const lastName = rest.join(" ");
+      const payload = {
+        first_name: firstName || "",
+        last_name: lastName || "",
+        email: formData.email || "",
+        phone: formData.phone || "",
+        address: formData.address || "",
+        license_number: formData.license || "",
+      };
+      await profileService.labs.update(payload);
+      const refreshed = await profileService.labs.get();
+      setFormData({
+        name: `${refreshed.first_name || ""} ${refreshed.last_name || ""}`.trim() || refreshed.username,
+        email: refreshed.email || "",
+        phone: refreshed.phone || "",
+        address: refreshed.address || "",
+        license: refreshed.license_number || "",
+      });
+      toast.success("Profile updated successfully");
+    } catch {
+      toast.error("Failed to update profile");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <DashboardLayout navItems={navItems} userType="labs">
       <div className="space-y-6 animate-fade-in">
         <div>
           <h1 className="text-3xl font-bold font-display text-foreground">Lab Profile</h1>
-          <p className="text-muted-foreground mt-1">View laboratory department details</p>
+          <p className="text-muted-foreground mt-1">Manage laboratory department details</p>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2">
@@ -47,9 +105,9 @@ const LabsProfile = () => {
                   <AvatarImage src="/placeholder-avatar.jpg" alt="Lab" />
                   <AvatarFallback className="text-xl">LB</AvatarFallback>
                 </Avatar>
-                <div>
-                  <h2 className="text-xl font-bold">Medicare Central Lab</h2>
-                  <p className="text-muted-foreground">Department of Pathology</p>
+                <div className="space-y-2 w-full">
+                  <Label>Lab Name</Label>
+                  <Input name="name" value={formData.name || ""} onChange={handleChange} />
                 </div>
               </div>
               
@@ -58,24 +116,24 @@ const LabsProfile = () => {
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
                   <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span>lab.central@medicare.com</span>
+                  <Input name="email" value={formData.email || ""} onChange={handleChange} />
                 </div>
                 <div className="flex items-center gap-3">
                   <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span>+1 (555) 123-4567</span>
+                  <Input name="phone" value={formData.phone || ""} onChange={handleChange} />
                 </div>
                 <div className="flex items-center gap-3">
                   <MapPin className="h-4 w-4 text-muted-foreground" />
-                  <span>Main Building, 2nd Floor, Wing B</span>
+                  <Input name="address" value={formData.address || ""} onChange={handleChange} />
                 </div>
                 <div className="flex items-center gap-3">
                   <Building className="h-4 w-4 text-muted-foreground" />
-                  <span>License #: CLIA-88990011</span>
+                  <Input name="license" value={formData.license || ""} onChange={handleChange} />
                 </div>
               </div>
 
               <div className="pt-4">
-                <Button className="w-full">Edit Profile</Button>
+                <Button className="w-full" onClick={handleSave} disabled={loading}>Save Changes</Button>
               </div>
             </CardContent>
           </Card>

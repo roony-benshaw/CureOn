@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import AppointmentCard from "@/components/dashboard/AppointmentCard";
+import RescheduleModal from "@/components/patient/RescheduleModal";
 import PrescriptionModal from "@/components/doctor/PrescriptionModal";
+import LabRequestModal from "@/components/doctor/LabRequestModal";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
@@ -26,6 +28,10 @@ const navItems = [
 const DoctorAppointments = () => {
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [selectedPrescriptionAppointment, setSelectedPrescriptionAppointment] = useState(null);
+  const [labModalOpen, setLabModalOpen] = useState(false);
+  const [selectedLabAppointment, setSelectedLabAppointment] = useState(null);
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState(null);
 
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -54,6 +60,10 @@ const DoctorAppointments = () => {
         time: a.time_slot,
         type: mapType(a.visit_type),
         status: mapStatus(a.status),
+        rescheduleRequested: a.status === "RESCHEDULE_REQUESTED",
+        requestedDate: a.requested_date ? format(new Date(a.requested_date), "PP") : null,
+        requestedTime: a.requested_time_slot || null,
+        doctorId: a.doctor,
       }));
       setAppointments(items);
     } catch {
@@ -93,9 +103,56 @@ const DoctorAppointments = () => {
     });
   };
 
+  const handleApproveReschedule = (appointment) => {
+    import("@/services/api").then(async ({ appointmentsService }) => {
+      try {
+        await appointmentsService.doctorRescheduleDecision(appointment.id, "ACCEPT");
+        toast.success("Reschedule accepted");
+        loadAppointments();
+      } catch {}
+    });
+  };
+
+  const handleRejectReschedule = (appointment) => {
+    import("@/services/api").then(async ({ appointmentsService }) => {
+      try {
+        await appointmentsService.doctorRescheduleDecision(appointment.id, "REJECT");
+        toast.error("Reschedule rejected");
+        loadAppointments();
+      } catch {}
+    });
+  };
+
   const handlePrescribe = (appointment) => {
     setSelectedPrescriptionAppointment(appointment);
     setPrescriptionModalOpen(true);
+  };
+  const handleLab = (appointment) => {
+    setSelectedLabAppointment(appointment);
+    setLabModalOpen(true);
+  };
+
+  const handleRescheduleOpen = (appointment) => {
+    setSelectedAppointment(appointment);
+    setRescheduleOpen(true);
+  };
+
+  const handleRescheduleConfirm = (newDate, newTime) => {
+    import("@/services/api").then(async ({ appointmentsService }) => {
+      try {
+        await appointmentsService.doctorReschedule(
+          selectedAppointment.id,
+          format(newDate, "yyyy-MM-dd"),
+          newTime
+        );
+        toast.success("Rescheduled");
+        setSelectedAppointment(null);
+        setRescheduleOpen(false);
+        loadAppointments();
+      } catch {
+        toast.error("Error");
+      }
+    });
   };
 
   const today = new Date();
@@ -103,7 +160,7 @@ const DoctorAppointments = () => {
     d.getDate() === today.getDate() &&
     d.getMonth() === today.getMonth() &&
     d.getFullYear() === today.getFullYear();
-  const todayAppointments = appointments.filter(app => isToday(app.rawDate) && app.status !== 'cancelled');
+  const todayAppointments = appointments.filter(app => isToday(app.rawDate) && app.status === 'upcoming');
   const upcomingAppointments = appointments.filter(app => !isToday(app.rawDate) && app.status === 'upcoming');
   const completedAppointments = appointments.filter(app => app.status === 'completed');
   const cancelledAppointments = appointments.filter(app => app.status === 'cancelled');
@@ -151,6 +208,8 @@ const DoctorAppointments = () => {
                     userType="doctor"
                     onJoin={() => handleJoinCall(appointment)}
                     onCancel={() => handleCancel(appointment)}
+                    onReschedule={() => handleRescheduleOpen(appointment)}
+                    onComplete={() => handleComplete(appointment)}
                   />
                 ))
               ) : (
@@ -172,6 +231,21 @@ const DoctorAppointments = () => {
                   userType="doctor"
                   onJoin={() => handleJoinCall(appointment)}
                   onCancel={() => handleCancel(appointment)}
+                  onReschedule={() => handleRescheduleOpen(appointment)}
+                  onComplete={() => handleComplete(appointment)}
+                  showActions={!appointment.rescheduleRequested}
+                  customActions={
+                    appointment.rescheduleRequested ? (
+                      <>
+                        <Button size="sm" variant="hero" onClick={() => handleApproveReschedule(appointment)}>
+                          Approve
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => handleRejectReschedule(appointment)}>
+                          Reject
+                        </Button>
+                      </>
+                    ) : undefined
+                  }
                 />
               ))}
             </div>
@@ -186,10 +260,15 @@ const DoctorAppointments = () => {
                   userType="doctor"
                   showActions={false}
                   customActions={
-                    <Button size="sm" variant="hero" onClick={() => handlePrescribe(appointment)}>
-                      <Pill className="w-4 h-4 mr-2" />
-                      Prescribe
-                    </Button>
+                    <>
+                      <Button size="sm" variant="hero" onClick={() => handlePrescribe(appointment)}>
+                        <Pill className="w-4 h-4 mr-2" />
+                        Prescribe
+                      </Button>
+                      <Button size="sm" variant="outline" className="ml-2" onClick={() => handleLab(appointment)}>
+                        Request Lab
+                      </Button>
+                    </>
                   }
                 />
               ))}
@@ -221,6 +300,34 @@ const DoctorAppointments = () => {
         open={prescriptionModalOpen}
         onOpenChange={setPrescriptionModalOpen}
         appointment={selectedPrescriptionAppointment}
+        onSubmit={async () => {
+          import("@/services/api").then(async ({ appointmentsService }) => {
+            try {
+              await appointmentsService.doctorUpdateStatus(selectedPrescriptionAppointment.id, "COMPLETED");
+            } catch {}
+            loadAppointments();
+          });
+        }}
+      />
+      <RescheduleModal
+        open={rescheduleOpen}
+        onOpenChange={setRescheduleOpen}
+        appointmentDetails={selectedAppointment ? {
+          patientName: selectedAppointment.patientName,
+          doctorId: selectedAppointment.doctorId,
+          currentDate: selectedAppointment.rawDate,
+          currentTime: selectedAppointment.time,
+        } : undefined}
+        onConfirm={handleRescheduleConfirm}
+      />
+      <LabRequestModal
+        open={labModalOpen}
+        onOpenChange={setLabModalOpen}
+        appointment={selectedLabAppointment}
+        onSubmit={() => {
+          // no status update necessary; labs will process independently
+          toast.success("Lab request created");
+        }}
       />
     </DashboardLayout>
   );

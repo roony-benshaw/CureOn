@@ -71,7 +71,7 @@ const Login = () => {
               <Stethoscope className="w-7 h-7 text-primary-foreground" />
             </div>
             <span className="font-display font-bold text-2xl text-foreground">
-              MediCare
+              CureOn
             </span>
           </Link>
           <h1 className="text-2xl font-bold text-foreground">Welcome Back</h1>

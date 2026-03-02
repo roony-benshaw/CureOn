@@ -231,7 +231,7 @@
     }
   },
   "landing": {
-    "brandName": "MediCare",
+    "brandName": "CureOn",
     "nav": {
       "home": "Home",
       "services": "Services",
@@ -318,7 +318,7 @@
     },
     "cta": {
       "title": "Start Your Health Journey Today",
-      "description": "Join thousands of patients who trust MediCare for their healthcare needs. Get started in minutes and experience healthcare reimagined.",
+      "description": "Join thousands of patients who trust CureOn for their healthcare needs. Get started in minutes and experience healthcare reimagined.",
       "createAccount": "Create Free Account",
       "talkSupport": "Talk to Support",
       "stats": {
@@ -348,7 +348,7 @@
         "privacyPolicy": "Privacy Policy",
         "termsOfService": "Terms of Service"
       },
-      "rightsReserved": "MediCare. All rights reserved."
+      "rightsReserved": "CureOn. All rights reserved."
     }
   }
 }

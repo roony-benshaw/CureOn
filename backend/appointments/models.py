@@ -61,3 +61,65 @@ class Appointment(models.Model):
 
     def __str__(self):
         return f"{self.patient_id} -> {self.doctor_id} @ {self.date} {self.time_slot} [{self.status}]"
+
+class Prescription(models.Model):
+    class Status(models.TextChoices):
+        ACTIVE = "ACTIVE", "Active"
+        COMPLETED = "COMPLETED", "Completed"
+
+    class PharmacyStatus(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        PROCESSING = "PROCESSING", "Processing"
+        READY = "READY", "Ready"
+        COMPLETED = "COMPLETED", "Completed"
+
+    appointment = models.OneToOneField(Appointment, on_delete=models.CASCADE, related_name="prescription")
+    patient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="prescriptions")
+    doctor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="written_prescriptions")
+    pharmacy = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="processed_prescriptions", null=True, blank=True)
+    diagnosis = models.CharField(max_length=255)
+    notes = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    pharmacy_status = models.CharField(max_length=20, choices=PharmacyStatus.choices, default=PharmacyStatus.PENDING)
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    bill_attachment = models.FileField(upload_to="bills/", null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+class PrescriptionItem(models.Model):
+    prescription = models.ForeignKey(Prescription, on_delete=models.CASCADE, related_name="items")
+    name = models.CharField(max_length=100)
+    dosage = models.CharField(max_length=100, blank=True)
+    frequency = models.CharField(max_length=100, blank=True)
+    duration = models.CharField(max_length=100, blank=True)
+    quantity = models.IntegerField(default=0)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+class LabTestRequest(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        IN_PROGRESS = "IN_PROGRESS", "In Progress"
+        COMPLETED = "COMPLETED", "Completed"
+        REJECTED = "REJECTED", "Rejected"
+    class Priority(models.TextChoices):
+        ROUTINE = "ROUTINE", "Routine"
+        URGENT = "URGENT", "Urgent"
+    appointment = models.ForeignKey(Appointment, on_delete=models.CASCADE, related_name="lab_requests")
+    patient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="lab_requests")
+    doctor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ordered_lab_tests")
+    lab = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="incoming_lab_requests", null=True, blank=True)
+    tests = models.JSONField()  # list of test names
+    notes = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    priority = models.CharField(max_length=20, choices=Priority.choices, default=Priority.ROUTINE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    result_value = models.CharField(max_length=255, blank=True)
+    reference_range = models.CharField(max_length=255, blank=True)
+    clinical_notes = models.TextField(blank=True)
+    attachment = models.FileField(upload_to="lab_results/", null=True, blank=True)
+    class Meta:
+        ordering = ["-created_at"]

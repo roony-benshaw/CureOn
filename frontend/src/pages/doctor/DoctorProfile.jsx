@@ -17,6 +17,7 @@ import {
   Award
 } from "lucide-react";
 import { toast } from "sonner";
+import { profileService } from "@/services/api";
 
 const navItems = [
   { name: "Dashboard", href: "/doctor/dashboard", icon: LayoutDashboard },
@@ -28,16 +29,30 @@ const navItems = [
 
 const DoctorProfile = () => {
   const { user } = useUser();
-  const doctorProfile = user;
 
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState(doctorProfile || {});
+  const [formData, setFormData] = useState({});
 
   useEffect(() => {
-    if (doctorProfile) {
-      setFormData(doctorProfile);
-    }
-  }, [doctorProfile]);
+    const load = async () => {
+      try {
+        const data = await profileService.doctor.get();
+        setFormData({
+          name: `${data.first_name || ""} ${data.last_name || ""}`.trim() || data.username,
+          email: data.email || "",
+          phone: data.phone || "",
+          specialty: data.specialization || "",
+          licenseNumber: data.license_number || "",
+          experience: data.experience_years || "",
+          hospital: data.hospital_name || "",
+          dob: data.date_of_birth || "",
+        });
+      } catch (e) {
+        // ignore
+      }
+    };
+    load();
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -56,21 +71,48 @@ const DoctorProfile = () => {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setLoading(true);
-    setTimeout(() => {
-      // updateUser("doctor", formData);
-      console.log("Update user:", formData);
+    try {
+      const [firstName, ...rest] = (formData.name || "").split(" ");
+      const lastName = rest.join(" ");
+      const payload = {
+        first_name: firstName || "",
+        last_name: lastName || "",
+        email: formData.email || "",
+        phone: formData.phone || "",
+        specialization: formData.specialty || "",
+        license_number: formData.licenseNumber || "",
+        hospital_name: formData.hospital || "",
+        experience_years: formData.experience ? Number(formData.experience) : null,
+        date_of_birth: formData.dob || null,
+        about: formData.about || "",
+      };
+      const updated = await profileService.doctor.update(payload);
       setLoading(false);
       toast.success("Profile updated successfully");
-    }, 1000);
+      setFormData((prev) => ({ ...prev, email: updated.email }));
+    } catch (e) {
+      setLoading(false);
+      toast.error("Something went wrong");
+    }
   };
 
   const handleCancel = () => {
-    if (doctorProfile) {
-      setFormData(doctorProfile);
-      toast.info("Changes discarded");
-    }
+    // Reload from server
+    profileService.doctor.get().then(data => {
+      setFormData({
+        name: `${data.first_name || ""} ${data.last_name || ""}`.trim() || data.username,
+        email: data.email || "",
+        phone: data.phone || "",
+        specialty: data.specialization || "",
+        licenseNumber: data.license_number || "",
+        experience: data.experience_years || "",
+        hospital: data.hospital_name || "",
+        dob: data.date_of_birth || "",
+      });
+    });
+    toast.info("Changes discarded");
   };
 
   return (
@@ -128,6 +170,10 @@ const DoctorProfile = () => {
             <div className="space-y-2">
               <Label>Hospital / Clinic</Label>
               <Input name="hospital" value={formData.hospital || ''} onChange={handleChange} />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label>About</Label>
+              <Input name="about" value={formData.about || ''} onChange={handleChange} />
             </div>
           </div>
         </div>
