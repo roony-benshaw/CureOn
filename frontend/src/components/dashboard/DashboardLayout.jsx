@@ -37,7 +37,14 @@ const DashboardLayout = ({
   const { t } = useTranslation();
   
   const userName = user?.username || propUserName || "User";
-  const userAvatar = propUserAvatar; // Fallback or use user.avatar if available later
+  const buildAvatarUrl = (path) => {
+    if (!path) return null;
+    const p = String(path);
+    if (p.startsWith("http")) return p;
+    if (p.startsWith("/media/")) return `http://127.0.0.1:8000${p}`;
+    return `http://127.0.0.1:8000/media/${p}`;
+  };
+  const userAvatar = propUserAvatar || buildAvatarUrl(user?.avatar);
 
   const userTypeLabels = {
     patient: "Patient",

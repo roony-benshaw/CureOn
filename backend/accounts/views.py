@@ -6,6 +6,9 @@ from django.conf import settings
 from django.core.mail import send_mail
 import secrets
 import string
+import re
+from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .serializers import (
     RegisterSerializer,
     CreateStaffSerializer,
@@ -167,6 +170,31 @@ class DoctorProfileView(APIView):
         serializer.update(request.user, serializer.validated_data)
         return Response(ExtendedUserSerializer(request.user).data)
 
+class AvatarUploadView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    def post(self, request):
+        file = request.FILES.get("avatar")
+        if not file:
+            return Response({"detail": "avatar required"}, status=status.HTTP_400_BAD_REQUEST)
+        user = request.user
+        user.avatar = file
+        user.save()
+        return Response(ExtendedUserSerializer(user).data, status=status.HTTP_200_OK)
+
+class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        username_or_email = attrs.get("username")
+        if username_or_email:
+            try:
+                u = User.objects.get(email=username_or_email)
+                attrs["username"] = u.username
+            except User.DoesNotExist:
+                pass
+        return super().validate(attrs)
+
+class MyTokenObtainPairView(TokenObtainPairView):
+    serializer_class = MyTokenObtainPairSerializer
+
 class PharmacyProfileView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -243,3 +271,41 @@ class SendCredentialsView(APIView):
             return Response({"sent": True})
         except Exception as e:
             return Response({"sent": False, "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class ChangePasswordView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        current = request.data.get("current_password")
+        new = request.data.get("new_password")
+        if not current or not new:
+            return Response({"detail": "current_password and new_password are required"}, status=status.HTTP_400_BAD_REQUEST)
+        user = request.user
+        if not user.check_password(current):
+            return Response({"detail": "Incorrect current password"}, status=status.HTTP_400_BAD_REQUEST)
+        if len(new) < 8:
+            return Response({"detail": "New password must be at least 8 characters"}, status=status.HTTP_400_BAD_REQUEST)
+        if new == current:
+            return Response({"detail": "New password must be different from current password"}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(new)
+        user.save(update_fields=["password"])
+        return Response({"detail": "Password updated"}, status=status.HTTP_200_OK)
+
+class ChangeUsernameView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        new_username = request.data.get("new_username")
+        if not new_username:
+            return Response({"detail": "new_username is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if len(new_username) < 3 or len(new_username) > 150:
+            return Response({"detail": "Username must be between 3 and 150 characters"}, status=status.HTTP_400_BAD_REQUEST)
+        if not re.match(r"^[a-zA-Z0-9_.-]+$", new_username):
+            return Response({"detail": "Username can contain letters, numbers, ., _, -"}, status=status.HTTP_400_BAD_REQUEST)
+        if new_username.lower() == request.user.username.lower():
+            return Response({"detail": "New username must be different"}, status=status.HTTP_400_BAD_REQUEST)
+        if User.objects.filter(username__iexact=new_username).exists():
+            return Response({"detail": "Username already taken"}, status=status.HTTP_400_BAD_REQUEST)
+        request.user.username = new_username
+        request.user.save(update_fields=["username"])
+        return Response({"detail": "Username updated"}, status=status.HTTP_200_OK)

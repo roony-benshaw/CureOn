@@ -25,6 +25,8 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/", include("accounts.urls")),
     path("api/appointments/", include("appointments.urls")),
+    path("api/equipment/", include("equipment.urls")),
+    path("api/pharmacy/", include("pharmacy.urls")),
     path("api/send-credentials", SendCredentialsView.as_view()),
 ]
 if settings.DEBUG:

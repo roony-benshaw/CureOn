@@ -11,6 +11,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'email', 'role', 'is_active', 'date_joined']
 
 class ExtendedUserSerializer(serializers.ModelSerializer):
+    avatar = serializers.SerializerMethodField()
     specialization = serializers.SerializerMethodField()
     phone = serializers.SerializerMethodField()
     license_number = serializers.SerializerMethodField()
@@ -34,11 +35,17 @@ class ExtendedUserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'email', 'role', 'is_active', 'date_joined', 'first_name', 'last_name',
                   'specialization', 'phone', 'license_number', 'address', 'age', 'gender', 'date_of_birth',
                   'blood_type', 'height_cm', 'weight_kg', 'allergies', 'chronic_diseases', 'past_diseases',
-                  'family_history', 'hospital_name', 'experience_years', 'about']
+                  'family_history', 'hospital_name', 'experience_years', 'about', 'avatar']
 
     def get_specialization(self, obj):
         p = getattr(obj, 'doctor_profile', None)
         return p.specialization if p else None
+    def get_avatar(self, obj):
+        f = getattr(obj, 'avatar', None)
+        try:
+            return f.url if f else None
+        except Exception:
+            return None
 
     def get_phone(self, obj):
         if obj.role == User.Role.DOCTOR:

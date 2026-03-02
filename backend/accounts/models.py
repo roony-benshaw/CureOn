@@ -10,6 +10,7 @@ class User(AbstractUser):
         ADMIN = "ADMIN", "Admin"
 
     role = models.CharField(max_length=50, choices=Role.choices, default=Role.PATIENT)
+    avatar = models.ImageField(upload_to="avatars/", null=True, blank=True)
     
     def save(self, *args, **kwargs):
         if self.is_superuser:

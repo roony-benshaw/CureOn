@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Appointment, DoctorAvailability, Prescription, PrescriptionItem, LabTestRequest
+from .models import Appointment, DoctorAvailability, Prescription, PrescriptionItem, LabTestRequest, LabTestRecord
 
 User = get_user_model()
 
@@ -16,6 +16,9 @@ class AppointmentSerializer(serializers.ModelSerializer):
     doctor_name = serializers.SerializerMethodField()
     patient_name = serializers.SerializerMethodField()
     doctor_specialization = serializers.SerializerMethodField()
+    diagnosis = serializers.SerializerMethodField()
+    doctor_avatar = serializers.SerializerMethodField()
+    patient_avatar = serializers.SerializerMethodField()
     class Meta:
         model = Appointment
         fields = [
@@ -33,6 +36,9 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "doctor_name",
             "patient_name",
             "doctor_specialization",
+            "diagnosis",
+            "doctor_avatar",
+            "patient_avatar",
         ]
         read_only_fields = ["patient", "status", "created_at", "updated_at"]
 
@@ -58,11 +64,29 @@ class AppointmentSerializer(serializers.ModelSerializer):
             full = f"{getattr(p, 'first_name', '')} {getattr(p, 'last_name', '')}".strip()
             return full or p.username
         return None
+    def get_doctor_avatar(self, obj):
+        d = getattr(obj, "doctor", None)
+        f = getattr(d, "avatar", None) if d else None
+        try:
+            return f.url if f else None
+        except Exception:
+            return None
+    def get_patient_avatar(self, obj):
+        p = getattr(obj, "patient", None)
+        f = getattr(p, "avatar", None) if p else None
+        try:
+            return f.url if f else None
+        except Exception:
+            return None
 
     def get_doctor_specialization(self, obj):
         d = getattr(obj, "doctor", None)
         prof = getattr(d, "doctor_profile", None) if d else None
         return getattr(prof, "specialization", None)
+
+    def get_diagnosis(self, obj):
+        presc = getattr(obj, "prescription", None)
+        return getattr(presc, "diagnosis", None)
 
 class PrescriptionItemSerializer(serializers.ModelSerializer):
     class Meta:
@@ -119,6 +143,7 @@ class LabTestRequestSerializer(serializers.ModelSerializer):
     doctor_name = serializers.SerializerMethodField()
     patient_name = serializers.SerializerMethodField()
     lab_name = serializers.SerializerMethodField()
+    uploaded_by = serializers.SerializerMethodField()
     class Meta:
         model = LabTestRequest
         fields = [
@@ -140,6 +165,7 @@ class LabTestRequestSerializer(serializers.ModelSerializer):
             "reference_range",
             "clinical_notes",
             "attachment",
+            "uploaded_by",
         ]
         read_only_fields = ["patient", "doctor", "created_at", "updated_at"]
     def get_doctor_name(self, obj):
@@ -153,6 +179,61 @@ class LabTestRequestSerializer(serializers.ModelSerializer):
         if p:
             full = f"{getattr(p, 'first_name', '')} {getattr(p, 'last_name', '')}".strip()
             return full or p.username
+        return None
+    def get_lab_name(self, obj):
+        l = getattr(obj, "lab", None)
+        if l:
+            full = f"{getattr(l, 'first_name', '')} {getattr(l, 'last_name', '')}".strip()
+            return full or l.username
+        return None
+    def get_uploaded_by(self, obj):
+        if not obj.attachment:
+            return None
+        notes = getattr(obj, "clinical_notes", "") or ""
+        if "[UPLOADED_BY_DOCTOR]" in notes:
+            return "Doctor"
+        d = getattr(obj, "doctor", None)
+        if d and getattr(d, "role", None) == User.Role.PATIENT:
+            return "Patient"
+        return "Lab" if getattr(obj, "lab", None) else "Doctor"
+
+
+class LabTestRecordSerializer(serializers.ModelSerializer):
+    patient_name = serializers.SerializerMethodField()
+    doctor_name = serializers.SerializerMethodField()
+    lab_name = serializers.SerializerMethodField()
+    class Meta:
+        model = LabTestRecord
+        fields = [
+            "id",
+            "test_id",
+            "date",
+            "patient",
+            "doctor",
+            "lab",
+            "test_type",
+            "result_summary",
+            "result_details",
+            "attachment",
+            "request",
+            "created_at",
+            "updated_at",
+            "patient_name",
+            "doctor_name",
+            "lab_name",
+        ]
+        read_only_fields = ["created_at", "updated_at"]
+    def get_patient_name(self, obj):
+        p = getattr(obj, "patient", None)
+        if p:
+            full = f"{getattr(p, 'first_name', '')} {getattr(p, 'last_name', '')}".strip()
+            return full or p.username
+        return None
+    def get_doctor_name(self, obj):
+        d = getattr(obj, "doctor", None)
+        if d:
+            full = f"{getattr(d, 'first_name', '')} {getattr(d, 'last_name', '')}".strip()
+            return full or d.username
         return None
     def get_lab_name(self, obj):
         l = getattr(obj, "lab", None)

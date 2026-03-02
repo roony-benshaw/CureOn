@@ -4,6 +4,7 @@ import PatientHistoryModal from "@/components/doctor/PatientHistoryModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Calendar,
@@ -21,6 +22,7 @@ import { appointmentsService } from "@/services/api";
 
 const DoctorPatients = () => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -40,6 +42,14 @@ const DoctorPatients = () => {
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  const buildAvatarUrl = (path) => {
+    if (!path) return null;
+    const p = String(path);
+    if (p.startsWith("http")) return p;
+    if (p.startsWith("/media/")) return `http://127.0.0.1:8000${p}`;
+    return `http://127.0.0.1:8000/media/${p}`;
+  };
+
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -54,7 +64,7 @@ const DoctorPatients = () => {
           condition: p.condition || "-",
           lastVisit: p.last_visit ? new Date(p.last_visit).toLocaleDateString() : "-",
           totalVisits: p.total_visits || 0,
-          avatar: null,
+          avatar: buildAvatarUrl(p.avatar),
         }));
         setPatients(items);
       } catch {
@@ -203,6 +213,9 @@ const DoctorPatients = () => {
                   <Button variant="outline" size="sm" onClick={() => handleViewHistory(patient)}>
                     <FileText className="w-4 h-4 mr-2" />
                     {t('doctor.patients.history')}
+                  </Button>
+                  <Button variant="hero" size="sm" onClick={() => navigate(`/doctor/patients/${patient.id}`)}>
+                    View
                   </Button>
                 </div>
               </div>

@@ -29,6 +29,7 @@ import {
   Settings,
   Search,
   Filter,
+  RefreshCcw,
   CheckCircle2,
   Clock,
   AlertCircle,
@@ -43,7 +44,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { appointmentsService } from "@/services/api";
+import { pharmacyService } from "@/services/api";
 
 const formatINR = (value) => {
   try {
@@ -75,6 +76,7 @@ const PharmacyOrders = () => {
 
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [billingOpen, setBillingOpen] = useState(false);
   const [billingOrder, setBillingOrder] = useState(null);
   const [billingItems, setBillingItems] = useState([]);
@@ -84,26 +86,23 @@ const PharmacyOrders = () => {
     const load = async () => {
       setLoading(true);
       try {
-        const res = await appointmentsService.prescriptions.listPharmacy();
-        // Map backend prescriptions to list items
-        const mapped = (res || []).map(p => ({
-          id: p.id,
-          displayId: `ORD-${String(p.id).padStart(3, '0')}`,
-          patientName: p.patient_name,
-          doctorName: `Dr. ${p.doctor_name}`,
-          date: new Date(p.created_at).toISOString().split('T')[0],
-          time: new Date(p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          status: (() => {
-            const raw = (p.pharmacy_status || 'PENDING').toLowerCase();
-            return raw.charAt(0).toUpperCase() + raw.slice(1);
-          })(),
-          items: (p.items || []).map(m => ({
+        const res = await pharmacyService.orders.list({ status: statusFilter === "All" ? undefined : statusFilter.toUpperCase() });
+        const mapped = (res || []).map(o => ({
+          id: o.id,
+          displayId: o.order_id,
+          prescription_id: o.prescription_id,
+          patientName: o.patient_name,
+          doctorName: "", // not available from order
+          date: new Date(o.created_at).toISOString().split('T')[0],
+          time: new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: o.status.charAt(0) + o.status.slice(1).toLowerCase(),
+          items: (o.items || []).map(m => ({
             id: m.id,
             name: m.name,
             quantity: m.quantity || 0,
             price: m.unit_price != null ? formatINR(m.unit_price) : ''
           })),
-          total: p.total_amount != null ? formatINR(p.total_amount) : ''
+          total: o.total_amount != null ? formatINR(o.total_amount) : ''
         }));
         setOrders(mapped);
       } catch {
@@ -113,7 +112,54 @@ const PharmacyOrders = () => {
       }
     };
     load();
-  }, []);
+  }, [statusFilter]);
+
+  const handleSyncFromPrescriptions = async () => {
+    setSyncing(true);
+    try {
+      const res = await pharmacyService.orders.backfill();
+      let ordersData = res?.orders || [];
+      if (!ordersData.length) {
+        const recalc = await pharmacyService.orders.recalcTotals();
+        ordersData = recalc?.orders || ordersData;
+      } else {
+        try {
+          const recalc = await pharmacyService.orders.recalcTotals();
+          if (recalc?.orders?.length) {
+            ordersData = recalc.orders;
+          }
+        } catch {}
+      }
+      const mapped = ordersData.map(o => ({
+        id: o.id,
+        displayId: o.order_id,
+        prescription_id: o.prescription_id,
+        patientName: o.patient_name,
+        doctorName: "",
+        date: new Date(o.created_at).toISOString().split('T')[0],
+        time: new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        status: o.status.charAt(0) + o.status.slice(1).toLowerCase(),
+        items: (o.items || []).map(m => ({
+          id: m.id,
+          name: m.name,
+          quantity: m.quantity || 0,
+          price: m.unit_price != null ? formatINR(m.unit_price) : ''
+        })),
+        total: o.total_amount != null ? formatINR(o.total_amount) : ''
+      }));
+      setOrders(mapped);
+      const created = res?.created ?? 0;
+      if (created > 0) {
+        toast.success(`Synced ${created} orders from prescriptions`);
+      } else {
+        toast.info("Orders synced and totals recalculated");
+      }
+    } catch {
+      toast.error("Failed to sync from prescriptions");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const handleStatusChange = (orderId, newStatus) => {
     setOrders(orders.map(order => 
@@ -198,6 +244,10 @@ const PharmacyOrders = () => {
             <Button variant="outline" onClick={handlePrint}>
               <Printer className="w-4 h-4 mr-2" />
               Print List
+            </Button>
+            <Button variant="outline" onClick={handleSyncFromPrescriptions} disabled={syncing}>
+              <RefreshCcw className="w-4 h-4 mr-2" />
+              {syncing ? "Syncing..." : "Sync from Prescriptions"}
             </Button>
             <Dialog open={isNewOrderOpen} onOpenChange={setIsNewOrderOpen}>
               <DialogTrigger asChild>
@@ -378,32 +428,36 @@ const PharmacyOrders = () => {
                     {order.status === "Pending" && (
                       <Button size="sm" variant="hero" onClick={async () => {
                         try {
-                          await appointmentsService.prescriptions.updatePharmacyStatus(order.id, "PROCESSING");
-                          setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: "Processing" } : o));
-                          toast.success("Status updated to Processing");
+                          await pharmacyService.orders.accept(order.id);
+                          setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: "Accepted" } : o));
+                          toast.success("Order accepted");
                         } catch {}
                       }}>Start Processing</Button>
                     )}
-                    {order.status === "Processing" && (
+                    {order.status === "Accepted" && (
                       <Button size="sm" variant="hero" className="bg-green-600 hover:bg-green-700" onClick={async () => {
                         try {
-                          await appointmentsService.prescriptions.updatePharmacyStatus(order.id, "READY");
-                          setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: "Ready" } : o));
-                          toast.success("Marked Ready");
-                        } catch {}
+                          await pharmacyService.orders.complete(order.id);
+                          setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: "Completed" } : o));
+                          toast.success("Order completed");
+                        } catch (e) {
+                          if (e?.response?.status === 409) {
+                            toast.error("Insufficient stock for some items");
+                          }
+                        }
                       }}>
-                        Mark Ready
+                        Complete Order
                       </Button>
                     )}
-                    {order.status === "Ready" && (
+                    {order.status === "Pending" && (
                       <Button size="sm" variant="outline" onClick={async () => {
                         try {
-                          await appointmentsService.prescriptions.updatePharmacyStatus(order.id, "COMPLETED");
-                          setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: "Completed" } : o));
-                          toast.success("Marked Completed");
+                          await pharmacyService.orders.reject(order.id);
+                          setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: "Cancelled" } : o));
+                          toast.success("Order cancelled");
                         } catch {}
                       }}>
-                        Mark Picked Up
+                        Cancel
                       </Button>
                     )}
                     <Button size="sm" variant="outline" onClick={() => {
@@ -495,7 +549,7 @@ const PharmacyOrders = () => {
               if (!billingOrder) return;
               try {
                 const payload = billingItems.map(x => ({ id: x.id, quantity: x.quantity, unit_price: x.unit_price }));
-                const updated = await appointmentsService.prescriptions.updatePharmacyBill(billingOrder.id, payload, billingAttachment);
+                    const updated = await appointmentsService.prescriptions.updatePharmacyBill(billingOrder.prescription_id, payload, billingAttachment);
                 setOrders(prev => prev.map(o => o.id === billingOrder.id ? {
                   ...o,
                   items: (updated.items || []).map(m => ({

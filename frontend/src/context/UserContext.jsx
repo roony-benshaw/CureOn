@@ -65,8 +65,19 @@ export const UserProvider = ({ children }) => {
     window.location.href = '/login';
   };
 
+  const refreshUser = async () => {
+    try {
+      const userData = await authService.getCurrentUser();
+      setUser(userData);
+      return userData;
+    } catch (e) {
+      console.error("Failed to refresh user", e);
+      throw e;
+    }
+  };
+
   return (
-    <UserContext.Provider value={{ user, login, register, logout, loading }}>
+    <UserContext.Provider value={{ user, login, register, logout, loading, refreshUser }}>
       {!loading && children}
     </UserContext.Provider>
   );

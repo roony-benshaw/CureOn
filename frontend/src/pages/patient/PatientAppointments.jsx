@@ -48,6 +48,13 @@ const PatientAppointments = () => {
   };
 
   const mapType = (t) => t === "IN_PERSON" ? "in-person" : "video";
+  const buildAvatarUrl = (path) => {
+    if (!path) return null;
+    const p = String(path);
+    if (p.startsWith("http")) return p;
+    if (p.startsWith("/media/")) return `http://127.0.0.1:8000${p}`;
+    return `http://127.0.0.1:8000/media/${p}`;
+  };
 
   const loadAppointments = async () => {
     setLoading(true);
@@ -62,6 +69,7 @@ const PatientAppointments = () => {
         type: mapType(a.visit_type),
         status: mapStatus(a.status),
         doctorId: a.doctor,
+        avatar: buildAvatarUrl(a.doctor_avatar),
       }));
       setAppointments(items);
     } catch {

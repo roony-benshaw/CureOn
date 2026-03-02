@@ -55,6 +55,15 @@ const AdminDashboard = () => {
     ];
   }, [appts]);
 
+  const quickSummary = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const newPatientsToday = (users || []).filter((u) => u.role === "PATIENT" && (u.date_joined || "").slice(0, 10) === today).length;
+    const activeConsultations = (appts || []).filter((a) => a.status === "UPCOMING" && (a.date || "") === today).length;
+    const pendingVerifications = (users || []).filter((u) => !u.is_active).length;
+    const systemHealth = "Good";
+    return { newPatientsToday, activeConsultations, pendingVerifications, systemHealth };
+  }, [users, appts]);
+
   return (
     <DashboardLayout navItems={navItems} userType="admin">
       <div className="space-y-8">
@@ -93,19 +102,19 @@ const AdminDashboard = () => {
             <div className="dashboard-card p-5 space-y-4">
               <div className="flex items-center justify-between p-3 rounded-xl bg-primary/5 border border-primary/10">
                 <span className="text-foreground">New patients today</span>
-                <span className="font-semibold text-primary">24</span>
+                <span className="font-semibold text-primary">{quickSummary.newPatientsToday}</span>
               </div>
               <div className="flex items-center justify-between p-3 rounded-xl bg-success/5 border border-success/10">
                 <span className="text-foreground">Active consultations</span>
-                <span className="font-semibold text-success">8</span>
+                <span className="font-semibold text-success">{quickSummary.activeConsultations}</span>
               </div>
               <div className="flex items-center justify-between p-3 rounded-xl bg-warning/5 border border-warning/10">
                 <span className="text-foreground">Pending verifications</span>
-                <span className="font-semibold text-warning">3</span>
+                <span className="font-semibold text-warning">{quickSummary.pendingVerifications}</span>
               </div>
               <div className="flex items-center justify-between p-3 rounded-xl bg-accent/5 border border-accent/10">
                 <span className="text-foreground">System health</span>
-                <span className="font-semibold text-accent">Good</span>
+                <span className="font-semibold text-accent">{quickSummary.systemHealth}</span>
               </div>
             </div>
           </div>

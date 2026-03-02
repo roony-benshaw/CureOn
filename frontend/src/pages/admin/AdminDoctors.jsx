@@ -40,7 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { userService } from "@/services/api";
+import { userService, appointmentsService } from "@/services/api";
 
 const navItems = [
   { name: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
@@ -71,18 +71,40 @@ const AdminDoctors = () => {
   const [editDoctorModalOpen, setEditDoctorModalOpen] = useState(false);
   const [editingDoctor, setEditingDoctor] = useState(null);
   const [doctors, setDoctors] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const buildAvatarUrl = (path) => {
+    if (!path) return null;
+    const p = String(path);
+    if (p.startsWith("http")) return p;
+    if (p.startsWith("/media/")) return `http://127.0.0.1:8000${p}`;
+    return `http://127.0.0.1:8000/media/${p}`;
+  };
 
   const loadDoctors = async () => {
     try {
-      const data = await userService.list("DOCTOR");
-      const mapped = data.map((u) => ({
+      const [users, appts] = await Promise.all([
+        userService.list("DOCTOR"),
+        appointmentsService.adminAll(),
+      ]);
+      const patientSets = {};
+      (appts || []).forEach((a) => {
+        if (a.status === "COMPLETED") {
+          const d = a.doctor;
+          const p = a.patient;
+          if (!patientSets[d]) patientSets[d] = new Set();
+          patientSets[d].add(p);
+        }
+      });
+      const mapped = users.map((u) => ({
         id: String(u.id),
         name: (u.first_name || u.last_name) ? `${u.first_name || ""} ${u.last_name || ""}`.trim() || `Dr. ${u.username}` : `Dr. ${u.username}`,
         specialty: u.specialization || "",
         email: u.email || "",
         phone: u.phone || "",
         status: u.is_active ? "active" : "inactive",
-        patients: 0,
+        patients: patientSets[u.id]?.size || 0,
+        avatar: buildAvatarUrl(u.avatar),
       }));
       setDoctors(mapped);
     } catch (e) {
@@ -153,11 +175,24 @@ const AdminDoctors = () => {
 
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search doctors..." className="pl-10" />
+          <Input
+            placeholder="Search doctors..."
+            className="pl-10"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {doctors.map((doctor) => (
+          {(searchTerm ? doctors.filter(d => {
+            const q = searchTerm.trim().toLowerCase();
+            return (
+              d.name.toLowerCase().includes(q) ||
+              d.specialty.toLowerCase().includes(q) ||
+              d.email.toLowerCase().includes(q) ||
+              d.phone.toLowerCase().includes(q)
+            );
+          }) : doctors).map((doctor) => (
             <div 
               key={doctor.id} 
               className="dashboard-card relative hover:shadow-lg transition-all group"
@@ -165,8 +200,12 @@ const AdminDoctors = () => {
               <Link to={`/admin/doctors/${doctor.id}`} className="block p-5">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                      <span className="text-primary font-semibold text-lg">{doctor.name.split(" ")[1]?.charAt(0)}</span>
+                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center overflow-hidden">
+                      {doctor.avatar ? (
+                        <img src={doctor.avatar} alt={doctor.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-primary font-semibold text-lg">{doctor.name.split(" ")[1]?.charAt(0)}</span>
+                      )}
                     </div>
                     <div>
                       <h3 className="font-semibold text-foreground">{doctor.name}</h3>

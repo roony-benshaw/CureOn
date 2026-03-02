@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { authService } from "@/services/api";
+import { useUser } from "@/context/UserContext";
 import {
   LayoutDashboard,
   Calendar,
@@ -15,6 +17,8 @@ import {
   User,
   Bell,
   Shield,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 const navItems = [
@@ -26,6 +30,7 @@ const navItems = [
 ];
 
 const DoctorSettings = () => {
+  const { refreshUser } = useUser();
   const [notifications, setNotifications] = useState({
     appointments: true,
     reminders: true,
@@ -38,6 +43,8 @@ const DoctorSettings = () => {
     new: "",
     confirm: "",
   });
+  const [newUsername, setNewUsername] = useState("");
+  const [showPwd, setShowPwd] = useState({ current: false, new: false, confirm: false });
 
   const handleNotificationChange = (key) => {
     setNotifications(prev => {
@@ -47,7 +54,7 @@ const DoctorSettings = () => {
     });
   };
 
-  const handleUpdatePassword = () => {
+  const handleUpdatePassword = async () => {
     if (!password.current || !password.new || !password.confirm) {
       toast.error("Please fill in all password fields");
       return;
@@ -56,8 +63,14 @@ const DoctorSettings = () => {
       toast.error("New passwords do not match");
       return;
     }
-    toast.success("Password updated successfully");
-    setPassword({ current: "", new: "", confirm: "" });
+    try {
+      await authService.changePassword(password.current, password.new);
+      toast.success("Password updated successfully");
+      setPassword({ current: "", new: "", confirm: "" });
+    } catch (e) {
+      const msg = e?.response?.data?.detail || "Failed to update password";
+      toast.error(msg);
+    }
   };
 
   return (
@@ -138,31 +151,70 @@ const DoctorSettings = () => {
           </div>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="currentPassword">Current Password</Label>
+              <Label htmlFor="newUsername">New Username</Label>
               <Input 
-                id="currentPassword" 
-                type="password"
-                value={password.current}
-                onChange={(e) => setPassword(prev => ({ ...prev, current: e.target.value }))}
+                id="newUsername" 
+                type="text"
+                value={newUsername}
+                onChange={(e) => setNewUsername(e.target.value)}
               />
+              <Button variant="outline" onClick={async () => {
+                if (!newUsername.trim()) {
+                  toast.error("Please enter a username");
+                  return;
+                }
+                try {
+                  await authService.changeUsername(newUsername.trim());
+                  toast.success("Username updated successfully");
+                  await refreshUser();
+                  setNewUsername("");
+                } catch (e) {
+                  const msg = e?.response?.data?.detail || "Failed to update username";
+                  toast.error(msg);
+                }
+              }}>Update Username</Button>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="currentPassword">Current Password</Label>
+              <div className="relative">
+                <Input 
+                  id="currentPassword" 
+                  type={showPwd.current ? "text" : "password"}
+                  value={password.current}
+                  onChange={(e) => setPassword(prev => ({ ...prev, current: e.target.value }))}
+                />
+                <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2" onClick={() => setShowPwd(s => ({ ...s, current: !s.current }))}>
+                  {showPwd.current ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </Button>
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="newPassword">New Password</Label>
-              <Input 
-                id="newPassword" 
-                type="password"
-                value={password.new}
-                onChange={(e) => setPassword(prev => ({ ...prev, new: e.target.value }))}
-              />
+              <div className="relative">
+                <Input 
+                  id="newPassword" 
+                  type={showPwd.new ? "text" : "password"}
+                  value={password.new}
+                  onChange={(e) => setPassword(prev => ({ ...prev, new: e.target.value }))}
+                />
+                <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2" onClick={() => setShowPwd(s => ({ ...s, new: !s.new }))}>
+                  {showPwd.new ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </Button>
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm New Password</Label>
-              <Input 
-                id="confirmPassword" 
-                type="password"
-                value={password.confirm}
-                onChange={(e) => setPassword(prev => ({ ...prev, confirm: e.target.value }))}
-              />
+              <div className="relative">
+                <Input 
+                  id="confirmPassword" 
+                  type={showPwd.confirm ? "text" : "password"}
+                  value={password.confirm}
+                  onChange={(e) => setPassword(prev => ({ ...prev, confirm: e.target.value }))}
+                />
+                <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2" onClick={() => setShowPwd(s => ({ ...s, confirm: !s.confirm }))}>
+                  {showPwd.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </Button>
+              </div>
             </div>
             <Button variant="outline" onClick={handleUpdatePassword}>Update Password</Button>
           </div>

@@ -123,3 +123,39 @@ class LabTestRequest(models.Model):
     attachment = models.FileField(upload_to="lab_results/", null=True, blank=True)
     class Meta:
         ordering = ["-created_at"]
+
+
+class LabTestRecord(models.Model):
+    class ResultSummary(models.TextChoices):
+        NORMAL = "NORMAL", "Normal"
+        ABNORMAL = "ABNORMAL", "Abnormal"
+        INFECTION_DETECTED = "INFECTION_DETECTED", "Infection Detected"
+
+    request = models.OneToOneField(
+        LabTestRequest, on_delete=models.CASCADE, related_name="record"
+    )
+    test_id = models.CharField(max_length=20, unique=True)
+    date = models.DateField()
+    patient = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="lab_history"
+    )
+    doctor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="lab_history_as_doctor"
+    )
+    lab = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="lab_history_as_lab"
+    )
+    test_type = models.CharField(max_length=255)
+    result_summary = models.CharField(
+        max_length=32, choices=ResultSummary.choices, default=ResultSummary.NORMAL
+    )
+    result_details = models.TextField(blank=True)
+    attachment = models.FileField(upload_to="lab_history/", null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-date", "-created_at"]
+
+    def __str__(self):
+        return f"{self.test_id} - {self.test_type} ({self.get_result_summary_display()})"

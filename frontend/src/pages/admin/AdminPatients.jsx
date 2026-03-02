@@ -58,6 +58,15 @@ const AdminPatients = () => {
   const [editPatientModalOpen, setEditPatientModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState(null);
   const [patients, setPatients] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const buildAvatarUrl = (path) => {
+    if (!path) return null;
+    const p = String(path);
+    if (p.startsWith("http")) return p;
+    if (p.startsWith("/media/")) return `http://127.0.0.1:8000${p}`;
+    return `http://127.0.0.1:8000/media/${p}`;
+  };
 
   const loadPatients = async () => {
     try {
@@ -71,6 +80,7 @@ const AdminPatients = () => {
         phone: u.phone || "",
         address: u.address || "",
         status: u.is_active ? "active" : "inactive",
+        avatar: buildAvatarUrl(u.avatar),
       }));
       setPatients(mapped);
     } catch (e) {
@@ -141,11 +151,26 @@ const AdminPatients = () => {
 
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search patients..." className="pl-10" />
+          <Input
+            placeholder="Search patients..."
+            className="pl-10"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {patients.map((patient) => (
+          {(searchTerm ? patients.filter(p => {
+            const q = searchTerm.trim().toLowerCase();
+            return (
+              p.name.toLowerCase().includes(q) ||
+              String(p.age || "").toLowerCase().includes(q) ||
+              String(p.gender || "").toLowerCase().includes(q) ||
+              p.email.toLowerCase().includes(q) ||
+              p.phone.toLowerCase().includes(q) ||
+              String(p.address || "").toLowerCase().includes(q)
+            );
+          }) : patients).map((patient) => (
             <div 
               key={patient.id} 
               className="dashboard-card relative hover:shadow-lg transition-all group"
@@ -153,8 +178,12 @@ const AdminPatients = () => {
               <Link to={`/admin/patients/${patient.id}`} className="block p-5">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                      <span className="text-primary font-semibold text-lg">{patient.name.split(" ")[0]?.charAt(0)}</span>
+                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center overflow-hidden">
+                      {patient.avatar ? (
+                        <img src={patient.avatar} alt={patient.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-primary font-semibold text-lg">{patient.name.split(" ")[0]?.charAt(0)}</span>
+                      )}
                     </div>
                     <div>
                       <h3 className="font-semibold text-foreground">{patient.name}</h3>

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +47,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { pharmacyService } from "@/services/api";
 
 const navItems = [
   { name: "Dashboard", href: "/pharmacy/dashboard", icon: LayoutDashboard },
@@ -62,60 +63,32 @@ const PharmacyHistory = () => {
   const [isViewDetailsOpen, setIsViewDetailsOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [selectedTypes, setSelectedTypes] = useState([]);
+  const [history, setHistory] = useState([]);
+  const formatINR = useMemo(
+    () => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }),
+    []
+  );
 
-  // Mock history data
-  const history = [
-    {
-      id: "TRX-1001",
-      date: "2024-02-01",
-      time: "14:30",
-      type: "Sale",
-      details: "Order #ORD-004 - Ibuprofen",
-      amount: "$8.00",
-      status: "Completed",
-      user: "Staff: John Doe"
-    },
-    {
-      id: "TRX-1002",
-      date: "2024-01-31",
-      time: "11:15",
-      type: "Restock",
-      details: "Restock Amoxicillin (50 units)",
-      amount: "-$250.00",
-      status: "Completed",
-      user: "Staff: Sarah Smith"
-    },
-    {
-      id: "TRX-1003",
-      date: "2024-01-30",
-      time: "09:45",
-      type: "Sale",
-      details: "Order #ORD-005 - Metformin",
-      amount: "$15.00",
-      status: "Completed",
-      user: "Staff: John Doe"
-    },
-    {
-      id: "TRX-1004",
-      date: "2024-01-28",
-      time: "16:20",
-      type: "Adjustment",
-      details: "Expired Inventory Disposal",
-      amount: "-$45.00",
-      status: "Approved",
-      user: "Admin: Manager"
-    },
-    {
-      id: "TRX-1005",
-      date: "2024-01-25",
-      time: "10:00",
-      type: "Sale",
-      details: "Order #ORD-006 - Lisinopril",
-      amount: "$25.00",
-      status: "Completed",
-      user: "Staff: Sarah Smith"
-    }
-  ];
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const types = selectedTypes.map(t => t.toUpperCase());
+        const date_from = date?.from ? format(date.from, "yyyy-MM-dd") : undefined;
+        const date_to = date?.to ? format(date.to, "yyyy-MM-dd") : (date?.from ? format(date.from, "yyyy-MM-dd") : undefined);
+        const data = await pharmacyService.transactions.list({
+          q: searchTerm,
+          types,
+          date_from,
+          date_to,
+        });
+        setHistory(data || []);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error(e);
+      }
+    };
+    load();
+  }, [searchTerm, selectedTypes, date]);
 
   const handleTypeToggle = (type) => {
     setSelectedTypes(prev => 
@@ -125,29 +98,29 @@ const PharmacyHistory = () => {
     );
   };
 
-  const filteredHistory = history.filter((item) => {
-    const matchesSearch = item.details.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.id.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    let matchesDate = true;
-    if (date?.from) {
-      const itemDate = parseISO(item.date);
-      const fromDate = startOfDay(date.from);
-      const toDate = date.to ? endOfDay(date.to) : endOfDay(date.from);
-      
-      matchesDate = isWithinInterval(itemDate, { start: fromDate, end: toDate });
+  const filteredHistory = history;
+
+  const handleExport = async () => {
+    try {
+      const types = selectedTypes.map(t => t.toUpperCase());
+      const date_from = date?.from ? format(date.from, "yyyy-MM-dd") : undefined;
+      const date_to = date?.to ? format(date.to, "yyyy-MM-dd") : (date?.from ? format(date.from, "yyyy-MM-dd") : undefined);
+      const blob = await pharmacyService.transactions.exportCsv({
+        q: searchTerm,
+        types,
+        date_from,
+        date_to,
+      });
+      const url = window.URL.createObjectURL(new Blob([blob], { type: "text/csv" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", "transactions.csv");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch {
+      toast.error("Export failed");
     }
-
-    let matchesType = true;
-    if (selectedTypes.length > 0) {
-      matchesType = selectedTypes.includes(item.type);
-    }
-
-    return matchesSearch && matchesDate && matchesType;
-  });
-
-  const handleExport = () => {
-    toast.success("Exporting history to CSV...");
   };
 
   const handleViewDetails = (item) => {
@@ -264,30 +237,30 @@ const PharmacyHistory = () => {
                 {filteredHistory.length > 0 ? (
                   filteredHistory.map((item) => (
                     <TableRow key={item.id}>
-                      <TableCell className="font-mono text-xs">{item.id}</TableCell>
+                      <TableCell className="font-mono text-xs">{item.transaction_id || `TRX-${String(item.id).padStart(4,"0")}`}</TableCell>
                       <TableCell>
                         <div className="text-sm">
-                          <p>{item.date}</p>
-                          <p className="text-muted-foreground text-xs">{item.time}</p>
+                          <p>{format(new Date(item.created_at), "yyyy-MM-dd")}</p>
+                          <p className="text-muted-foreground text-xs">{format(new Date(item.created_at), "HH:mm")}</p>
                         </div>
                       </TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          item.type === "Sale" ? "bg-green-100 text-green-800" :
-                          item.type === "Restock" ? "bg-blue-100 text-blue-800" :
+                          item.type === "SALE" ? "bg-green-100 text-green-800" :
+                          item.type === "RESTOCK" ? "bg-blue-100 text-blue-800" :
                           "bg-orange-100 text-orange-800"
                         }`}>
-                          {item.type}
+                          {item.type === "SALE" ? "Sale" : item.type === "RESTOCK" ? "Restock" : "Adjustment"}
                         </span>
                       </TableCell>
                       <TableCell className="max-w-xs truncate">{item.details}</TableCell>
                       <TableCell>
-                        <span className={item.amount.startsWith("-") ? "text-destructive" : "text-green-600 font-medium"}>
-                          {item.amount}
+                        <span className={Number(item.amount) < 0 ? "text-destructive" : "text-green-600 font-medium"}>
+                          {formatINR.format(Number(item.amount || 0))}
                         </span>
                       </TableCell>
                       <TableCell>{item.status}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{item.user}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{item.user_display || "System"}</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="sm" onClick={() => handleViewDetails(item)}>
                           <FileText className="w-4 h-4" />
@@ -313,24 +286,24 @@ const PharmacyHistory = () => {
           <DialogHeader>
             <DialogTitle>Transaction Details</DialogTitle>
             <DialogDescription>
-              View complete information for transaction {selectedTransaction?.id}
+              View complete information for transaction {selectedTransaction?.transaction_id || `TRX-${String(selectedTransaction?.id || "").padStart(4,"0")}`}
             </DialogDescription>
           </DialogHeader>
           {selectedTransaction && (
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-4 items-center gap-4">
                 <span className="font-semibold text-right">Date:</span>
-                <span className="col-span-3">{selectedTransaction.date} at {selectedTransaction.time}</span>
+                <span className="col-span-3">{format(new Date(selectedTransaction.created_at), "yyyy-MM-dd HH:mm")}</span>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <span className="font-semibold text-right">Type:</span>
                 <span className="col-span-3">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                    selectedTransaction.type === "Sale" ? "bg-green-100 text-green-800" :
-                    selectedTransaction.type === "Restock" ? "bg-blue-100 text-blue-800" :
+                    selectedTransaction.type === "SALE" ? "bg-green-100 text-green-800" :
+                    selectedTransaction.type === "RESTOCK" ? "bg-blue-100 text-blue-800" :
                     "bg-orange-100 text-orange-800"
                   }`}>
-                    {selectedTransaction.type}
+                    {selectedTransaction.type === "SALE" ? "Sale" : selectedTransaction.type === "RESTOCK" ? "Restock" : "Adjustment"}
                   </span>
                 </span>
               </div>
@@ -341,8 +314,8 @@ const PharmacyHistory = () => {
               <div className="grid grid-cols-4 items-center gap-4">
                 <span className="font-semibold text-right">Amount:</span>
                 <span className="col-span-3 font-medium text-lg">
-                   <span className={selectedTransaction.amount.startsWith("-") ? "text-destructive" : "text-green-600"}>
-                      {selectedTransaction.amount}
+                   <span className={Number(selectedTransaction.amount) < 0 ? "text-destructive" : "text-green-600"}>
+                      {formatINR.format(Number(selectedTransaction.amount || 0))}
                    </span>
                 </span>
               </div>
@@ -352,15 +325,26 @@ const PharmacyHistory = () => {
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <span className="font-semibold text-right">User:</span>
-                <span className="col-span-3">{selectedTransaction.user}</span>
+                <span className="col-span-3">{selectedTransaction.user_display || "System"}</span>
               </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsViewDetailsOpen(false)}>Close</Button>
-            <Button onClick={() => {
-                toast.success(`Receipt for ${selectedTransaction?.id} printed`);
-                setIsViewDetailsOpen(false);
+            <Button onClick={async () => {
+                try {
+                  const blob = await pharmacyService.transactions.receipt(selectedTransaction.id);
+                  const url = window.URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+                  const link = document.createElement("a");
+                  link.href = url;
+                  link.setAttribute("download", `receipt_${selectedTransaction.transaction_id || selectedTransaction.id}.pdf`);
+                  document.body.appendChild(link);
+                  link.click();
+                  link.remove();
+                  setIsViewDetailsOpen(false);
+                } catch {
+                  toast.error("Failed to generate receipt");
+                }
             }}>
               Print Receipt
             </Button>

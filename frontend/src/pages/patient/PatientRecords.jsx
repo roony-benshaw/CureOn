@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
   LayoutDashboard,
   Calendar,
@@ -53,6 +54,11 @@ const PatientRecords = () => {
   });
 
   const [doctorRecords, setDoctorRecords] = useState([]);
+  const [loadingUploads, setLoadingUploads] = useState(false);
+  const [otherUploads, setOtherUploads] = useState([]);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [customName, setCustomName] = useState("");
+  const [customFile, setCustomFile] = useState(null);
 
   useEffect(() => {
     const load = async () => {
@@ -80,23 +86,131 @@ const PatientRecords = () => {
     load();
   }, []);
 
-  const handleFileUpload = (recordId, event) => {
+  useEffect(() => {
+    const loadUploads = async () => {
+      setLoadingUploads(true);
+      try {
+        const res = await appointmentsService.lab.patientUploads();
+        const next = { u1: null, u2: null, u3: null, u4: null, u5: null };
+        const others = [];
+        (res || []).forEach(r => {
+          const notes = String(r.clinical_notes || "");
+          const m = notes.match(/\[REPORT_NAME:(.+?)\]/);
+          const reportName = m ? m[1] : (Array.isArray(r.tests) ? String(r.tests[0]) : "Uploaded");
+          const slot = defaultUserRecords.find(d => d.name === reportName);
+          const mapped = {
+            id: slot ? slot.id : `custom-${r.id}`,
+            name: reportName,
+            type: "uploaded",
+            date: new Date(r.created_at),
+            fileType: r.attachment ? (String(r.attachment).toLowerCase().endsWith('.pdf') ? 'pdf' : 'image') : 'none',
+            size: "",
+            uploadedBy: "user",
+            fileName: reportName,
+            attachment: r.attachment,
+          };
+          if (slot) {
+            next[slot.id] = mapped;
+          } else {
+            others.push(mapped);
+          }
+        });
+        setUserRecords(next);
+        setOtherUploads(others);
+      } catch {
+        setUserRecords(prev => prev);
+      } finally {
+        setLoadingUploads(false);
+      }
+    };
+    loadUploads();
+  }, []);
+
+  const handleFileUpload = async (recordId, event) => {
     const files = event.target.files;
     if (files && files.length > 0) {
       const file = files[0];
       const record = defaultUserRecords.find(r => r.id === recordId);
-      const newRecord = {
-        id: recordId,
-        name: record?.name || file.name,
-        type: "uploaded",
-        date: new Date(),
-        fileType: file.type.includes("pdf") ? "pdf" : "image",
-        size: `${(file.size / 1024).toFixed(0)} KB`,
-        uploadedBy: "user",
-        fileName: file.name,
-      };
-      setUserRecords(prev => ({ ...prev, [recordId]: newRecord }));
-      toast.success(t('records.uploadSuccess', { name: file.name }));
+      try {
+        await appointmentsService.lab.patientUpload({
+          report_name: record?.name || file.name,
+          attachment: file,
+        });
+        const res = await appointmentsService.lab.patientUploads();
+        const next = { u1: null, u2: null, u3: null, u4: null, u5: null };
+        const others = [];
+        (res || []).forEach(r => {
+          const notes = String(r.clinical_notes || "");
+          const m = notes.match(/\[REPORT_NAME:(.+?)\]/);
+          const reportName = m ? m[1] : (Array.isArray(r.tests) ? String(r.tests[0]) : "Uploaded");
+          const slot = defaultUserRecords.find(d => d.name === reportName);
+          const mapped = {
+            id: slot ? slot.id : `custom-${r.id}`,
+            name: reportName,
+            type: "uploaded",
+            date: new Date(r.created_at),
+            fileType: r.attachment ? (String(r.attachment).toLowerCase().endsWith('.pdf') ? 'pdf' : 'image') : 'none',
+            size: "",
+            uploadedBy: "user",
+            fileName: reportName,
+            attachment: r.attachment,
+          };
+          if (slot) {
+            next[slot.id] = mapped;
+          } else {
+            others.push(mapped);
+          }
+        });
+        setUserRecords(next);
+        setOtherUploads(others);
+        toast.success(t('records.uploadSuccess', { name: record?.name || file.name }));
+      } catch (err) {
+        toast.error(err?.response?.data?.detail || t('records.uploadFailed'));
+      } finally {
+        event.target.value = "";
+      }
+    }
+  };
+
+  const handleCustomUpload = async () => {
+    if (!customFile || !customName) {
+      toast.info(t('records.chooseFile'));
+      return;
+    }
+    try {
+      await appointmentsService.lab.patientUpload({
+        report_name: customName,
+        attachment: customFile,
+      });
+      const res = await appointmentsService.lab.patientUploads();
+      const next = { u1: null, u2: null, u3: null, u4: null, u5: null };
+      const others = [];
+      (res || []).forEach(r => {
+        const notes = String(r.clinical_notes || "");
+        const m = notes.match(/\[REPORT_NAME:(.+?)\]/);
+        const reportName = m ? m[1] : (Array.isArray(r.tests) ? String(r.tests[0]) : "Uploaded");
+        const slot = defaultUserRecords.find(d => d.name === reportName);
+        const mapped = {
+          id: slot ? slot.id : `custom-${r.id}`,
+          name: reportName,
+          type: "uploaded",
+          date: new Date(r.created_at),
+          fileType: r.attachment ? (String(r.attachment).toLowerCase().endsWith('.pdf') ? 'pdf' : 'image') : 'none',
+          size: "",
+          uploadedBy: "user",
+          fileName: reportName,
+          attachment: r.attachment,
+        };
+        if (slot) next[slot.id] = mapped; else others.push(mapped);
+      });
+      setUserRecords(next);
+      setOtherUploads(others);
+      setUploadOpen(false);
+      setCustomName("");
+      setCustomFile(null);
+      toast.success(t('records.uploadSuccess', { name: customName }));
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || t('records.uploadFailed'));
     }
   };
 
@@ -187,7 +301,7 @@ const PatientRecords = () => {
         </div>
         <div className="flex items-center gap-2">
           {uploadedRecord && (
-            <Button variant="ghost" size="sm" onClick={() => handleDownload(uploadedRecord.fileName)}>
+            <Button variant="ghost" size="sm" onClick={() => handleDownload(uploadedRecord)}>
               <Download className="w-4 h-4" />
             </Button>
           )}
@@ -260,6 +374,12 @@ const PatientRecords = () => {
 
           <TabsContent value="user" className="mt-6">
             <div className="space-y-4">
+              <div className="flex justify-end">
+                <Button onClick={() => setUploadOpen(true)}>
+                  <Upload className="w-4 h-4 mr-2" />
+                  {t('records.chooseFile')}
+                </Button>
+              </div>
               {defaultUserRecords.map((recordDef) => (
                 <UserRecordSlot
                   key={recordDef.id}
@@ -267,9 +387,40 @@ const PatientRecords = () => {
                   uploadedRecord={userRecords[recordDef.id]}
                 />
               ))}
+              {otherUploads.length > 0 && (
+                <div className="space-y-3">
+                  {otherUploads.map((rec) => (
+                    <RecordCard key={rec.id} record={rec} />
+                  ))}
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>
+        <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t('records.title')}</DialogTitle>
+              <DialogDescription>{t('records.subtitle')}</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <Label className="text-sm">Report Name</Label>
+                  <Input placeholder="e.g. MRI Scan" value={customName} onChange={(e) => setCustomName(e.target.value)} />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-sm">Attach File/Image</Label>
+                <Input type="file" accept="image/*,.pdf" onChange={(e) => setCustomFile(e.target.files?.[0] || null)} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setUploadOpen(false)}>Cancel</Button>
+              <Button onClick={handleCustomUpload}>Upload</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );

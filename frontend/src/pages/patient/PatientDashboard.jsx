@@ -47,6 +47,13 @@ const PatientDashboard = () => {
   const [labResults, setLabResults] = useState([]);
 
   const mapType = (t) => (t === "IN_PERSON" ? "in-person" : "video");
+  const buildAvatarUrl = (path) => {
+    if (!path) return null;
+    const p = String(path);
+    if (p.startsWith("http")) return p;
+    if (p.startsWith("/media/")) return `http://127.0.0.1:8000${p}`;
+    return `http://127.0.0.1:8000/media/${p}`;
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -79,6 +86,7 @@ const PatientDashboard = () => {
         time: a.time_slot,
         type: mapType(a.visit_type),
         status: "upcoming",
+        avatar: buildAvatarUrl(a.doctor_avatar),
       }));
   }, [appointments]);
 

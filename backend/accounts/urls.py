@@ -1,9 +1,6 @@
 from django.urls import path
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
-from .views import RegisterView, AdminCreateStaffView, UserDetailView, UsersListView, AdminUserUpdateView, DoctorsPublicListView, LabsPublicListView, PatientProfileView, DoctorProfileView, PharmacyProfileView, LabProfileView, AdminProfileView
+from rest_framework_simplejwt.views import TokenRefreshView
+from .views import RegisterView, AdminCreateStaffView, UserDetailView, UsersListView, AdminUserUpdateView, DoctorsPublicListView, LabsPublicListView, PatientProfileView, DoctorProfileView, PharmacyProfileView, LabProfileView, AdminProfileView, ChangePasswordView, ChangeUsernameView, AvatarUploadView, MyTokenObtainPairView
 from .views_admin import (
     AdminDoctorDetailView,
     AdminPatientDetailView,
@@ -13,7 +10,7 @@ from .views_admin import (
 
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
-    path('login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('login/', MyTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('create-staff/', AdminCreateStaffView.as_view(), name='create_staff'),
     path('me/', UserDetailView.as_view(), name='user_detail'),
@@ -26,6 +23,9 @@ urlpatterns = [
     path('pharmacy/profile/', PharmacyProfileView.as_view(), name='pharmacy_profile'),
     path('labs/profile/', LabProfileView.as_view(), name='lab_profile'),
     path('admin/profile/', AdminProfileView.as_view(), name='admin_profile'),
+    path('change-password/', ChangePasswordView.as_view(), name='change_password'),
+    path('change-username/', ChangeUsernameView.as_view(), name='change_username'),
+    path('profile/avatar/', AvatarUploadView.as_view(), name='profile_avatar'),
     
     # Admin Detail Views
     path('admin/doctors/<int:id>/', AdminDoctorDetailView.as_view(), name='admin_doctor_detail'),

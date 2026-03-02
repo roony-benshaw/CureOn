@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -50,6 +50,7 @@ import {
   Filter,
   Plus
 } from "lucide-react";
+import { equipmentService } from "@/services/api";
 
 const navItems = [
   { name: "Dashboard", href: "/labs/dashboard", icon: LayoutDashboard },
@@ -68,61 +69,45 @@ const LabsEquipment = () => {
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [filters, setFilters] = useState({ status: [] });
-  const [newEquipment, setNewEquipment] = useState({ name: "", model: "", location: "" });
+  const [newEquipment, setNewEquipment] = useState({ asset_id: "", name: "", model: "", location: "" });
+  const [maintenanceDate, setMaintenanceDate] = useState("");
+  const [maintenanceNotes, setMaintenanceNotes] = useState("");
+  const [issueType, setIssueType] = useState("");
+  const [issueDescription, setIssueDescription] = useState("");
 
-  const [equipmentList, setEquipmentList] = useState([
-    {
-      id: "EQ-001",
-      name: "Hematology Analyzer",
-      model: "Sysmex XN-550",
-      status: "Operational",
-      lastMaintenance: "2024-01-15",
-      nextMaintenance: "2024-02-15",
-      location: "Main Lab"
-    },
-    {
-      id: "EQ-002",
-      name: "Centrifuge A",
-      model: "Thermo Scientific",
-      status: "Maintenance",
-      lastMaintenance: "2023-12-20",
-      nextMaintenance: "2024-02-05",
-      location: "Sample Prep"
-    },
-    {
-      id: "EQ-003",
-      name: "Microscope B",
-      model: "Olympus CX23",
-      status: "Operational",
-      lastMaintenance: "2024-01-10",
-      nextMaintenance: "2024-04-10",
-      location: "Microbiology"
-    },
-    {
-      id: "EQ-004",
-      name: "Chemistry Analyzer",
-      model: "Beckman Coulter",
-      status: "Calibrating",
-      lastMaintenance: "2024-02-01",
-      nextMaintenance: "2024-03-01",
-      location: "Chemistry"
-    },
-    {
-      id: "EQ-005",
-      name: "Autoclave",
-      model: "Tuttnauer 3870",
-      status: "Operational",
-      lastMaintenance: "2023-11-30",
-      nextMaintenance: "2024-02-28",
-      location: "Sterilization"
-    }
-  ]);
+  const [equipmentList, setEquipmentList] = useState([]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const statusFilter = filters.status.length === 1 ? filters.status[0] : undefined;
+        const data = await equipmentService.list({
+          search: searchTerm,
+          status: statusFilter,
+        });
+        const mapped = data.map((e) => ({
+          id: e.id,
+          asset_id: e.asset_id,
+          name: e.name,
+          model: e.model,
+          location: e.location,
+          status: toReadableStatus(e.status),
+          nextMaintenance: e.next_maintenance || "—",
+        }));
+        setEquipmentList(mapped);
+      } catch (err) {
+        console.error("Failed to load equipment", err);
+        toast.error("Failed to load equipment");
+      }
+    };
+    load();
+  }, [searchTerm, filters]);
 
   const filteredEquipment = equipmentList.filter(eq => {
     const matchesSearch = 
       eq.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      eq.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      eq.model.toLowerCase().includes(searchTerm.toLowerCase());
+      String(eq.asset_id || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (eq.model || "").toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = filters.status.length === 0 || filters.status.includes(eq.status);
     
     return matchesSearch && matchesStatus;
@@ -138,54 +123,107 @@ const LabsEquipment = () => {
   };
 
   const handleAddEquipment = () => {
-    setNewEquipment({ name: "", model: "", location: "" });
+    setNewEquipment({ asset_id: "", name: "", model: "", location: "" });
     setIsAddDialogOpen(true);
   };
 
-  const submitNewEquipment = () => {
-    if (!newEquipment.name || !newEquipment.model) {
+  const submitNewEquipment = async () => {
+    if (!newEquipment.asset_id || !newEquipment.name || !newEquipment.model) {
       toast.error("Please fill in required fields");
       return;
     }
-    
-    const newId = `EQ-00${equipmentList.length + 1}`;
-    const newEntry = {
-      id: newId,
-      ...newEquipment,
-      status: "Operational",
-      lastMaintenance: "N/A",
-      nextMaintenance: "2024-05-01" // Mock date
-    };
-    
-    setEquipmentList([...equipmentList, newEntry]);
-    toast.success(`${newEquipment.name} added successfully`);
-    setIsAddDialogOpen(false);
+    try {
+      const created = await equipmentService.create({
+        asset_id: newEquipment.asset_id,
+        name: newEquipment.name,
+        model: newEquipment.model,
+        location: newEquipment.location,
+      });
+      const newEntry = {
+        id: created.id,
+        asset_id: created.asset_id,
+        name: created.name,
+        model: created.model,
+        location: created.location,
+        status: toReadableStatus(created.status),
+        nextMaintenance: created.next_maintenance || "—",
+      };
+      setEquipmentList((prev) => [newEntry, ...prev]);
+      toast.success(`${newEquipment.name} added successfully`);
+      setIsAddDialogOpen(false);
+    } catch (err) {
+      console.error("Create equipment failed", err);
+      toast.error("Failed to add equipment");
+    }
   };
 
   const handleMaintenance = (eq) => {
     setSelectedEquipment(eq);
+    setMaintenanceDate("");
+    setMaintenanceNotes("");
     setIsMaintenanceDialogOpen(true);
   };
 
   const handleReport = (eq) => {
     setSelectedEquipment(eq);
+    setIssueType("");
+    setIssueDescription("");
     setIsReportDialogOpen(true);
   };
 
-  const submitMaintenance = () => {
-    toast.success(`Maintenance scheduled for ${selectedEquipment.name}`);
-    setIsMaintenanceDialogOpen(false);
+  const submitMaintenance = async () => {
+    if (!maintenanceDate) {
+      toast.error("Please select maintenance date");
+      return;
+    }
+    try {
+      const updated = await equipmentService.scheduleMaintenance(selectedEquipment.id, {
+        next_maintenance: maintenanceDate,
+        status: "MAINTENANCE",
+        notes: maintenanceNotes,
+      });
+      setEquipmentList((prev) =>
+        prev.map((e) =>
+          e.id === selectedEquipment.id
+            ? {
+                ...e,
+                status: toReadableStatus(updated.status),
+                nextMaintenance: updated.next_maintenance || "—",
+              }
+            : e
+        )
+      );
+      toast.success(`Maintenance scheduled for ${selectedEquipment.name}`);
+      setIsMaintenanceDialogOpen(false);
+    } catch (err) {
+      console.error("Schedule maintenance failed", err);
+      toast.error("Failed to schedule maintenance");
+    }
   };
 
-  const submitReport = () => {
-    toast.error(`Issue reported for ${selectedEquipment.name}. Tech support notified.`);
-    
-    // Update status to 'Issue Reported' or similar in a real app
-    setEquipmentList(equipmentList.map(e => 
-      e.id === selectedEquipment.id ? { ...e, status: "Issue Reported" } : e
-    ));
-    
-    setIsReportDialogOpen(false);
+  const submitReport = async () => {
+    if (!issueType || !issueDescription) {
+      toast.error("Please provide issue type and description");
+      return;
+    }
+    try {
+      const updated = await equipmentService.reportIssue(selectedEquipment.id, {
+        issue_type: issueType,
+        description: issueDescription,
+      });
+      setEquipmentList((prev) =>
+        prev.map((e) =>
+          e.id === selectedEquipment.id
+            ? { ...e, status: toReadableStatus(updated.status) }
+            : e
+        )
+      );
+      toast.error(`Issue reported for ${selectedEquipment.name}.`);
+      setIsReportDialogOpen(false);
+    } catch (err) {
+      console.error("Report issue failed", err);
+      toast.error("Failed to report issue");
+    }
   };
 
   const getStatusColor = (status) => {
@@ -193,8 +231,19 @@ const LabsEquipment = () => {
       case "Operational": return "text-green-600 bg-green-50 border-green-200";
       case "Maintenance": return "text-yellow-600 bg-yellow-50 border-yellow-200";
       case "Calibrating": return "text-blue-600 bg-blue-50 border-blue-200";
-      case "Issue Reported": return "text-red-600 bg-red-50 border-red-200";
+      case "Reported": return "text-red-600 bg-red-50 border-red-200";
       default: return "text-gray-600 bg-gray-50 border-gray-200";
+    }
+  };
+
+  const toReadableStatus = (status) => {
+    switch (status) {
+      case "OPERATIONAL": return "Operational";
+      case "MAINTENANCE": return "Maintenance";
+      case "CALIBRATING": return "Calibrating";
+      case "REPORTED": return "Reported";
+      case "BROKEN": return "Broken";
+      default: return status;
     }
   };
 
@@ -218,7 +267,7 @@ const LabsEquipment = () => {
                 <div className="space-y-2">
                   <h4 className="font-medium leading-none">Status</h4>
                   <div className="flex flex-col gap-2 mt-2">
-                    {["Operational", "Maintenance", "Calibrating", "Issue Reported"].map((status) => (
+                    {["Operational", "Maintenance", "Calibrating", "Reported"].map((status) => (
                       <div key={status} className="flex items-center space-x-2">
                         <Checkbox 
                           id={`status-${status}`} 
@@ -272,7 +321,7 @@ const LabsEquipment = () => {
               <TableBody>
                 {filteredEquipment.map((eq) => (
                   <TableRow key={eq.id}>
-                    <TableCell className="font-mono font-medium">{eq.id}</TableCell>
+                    <TableCell className="font-mono font-medium">{eq.asset_id}</TableCell>
                     <TableCell className="font-medium">{eq.name}</TableCell>
                     <TableCell>{eq.model}</TableCell>
                     <TableCell>{eq.location}</TableCell>
@@ -320,6 +369,15 @@ const LabsEquipment = () => {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
+              <Label htmlFor="eq-asset">Asset ID *</Label>
+              <Input 
+                id="eq-asset" 
+                placeholder="e.g. EQ-001" 
+                value={newEquipment.asset_id}
+                onChange={(e) => setNewEquipment({...newEquipment, asset_id: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="eq-name">Equipment Name *</Label>
               <Input 
                 id="eq-name" 
@@ -366,11 +424,21 @@ const LabsEquipment = () => {
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="maintenance-date">Maintenance Date</Label>
-              <Input type="date" id="maintenance-date" />
+              <Input 
+                type="date" 
+                id="maintenance-date" 
+                value={maintenanceDate}
+                onChange={(e) => setMaintenanceDate(e.target.value)} 
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="notes">Notes</Label>
-              <Textarea id="notes" placeholder="Enter maintenance details..." />
+              <Textarea 
+                id="notes" 
+                placeholder="Enter maintenance details..." 
+                value={maintenanceNotes}
+                onChange={(e) => setMaintenanceNotes(e.target.value)}
+              />
             </div>
           </div>
           <DialogFooter>
@@ -392,11 +460,21 @@ const LabsEquipment = () => {
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="issue-type">Issue Type</Label>
-              <Input id="issue-type" placeholder="e.g. Calibration Error" />
+              <Input 
+                id="issue-type" 
+                placeholder="e.g. Calibration Error" 
+                value={issueType}
+                onChange={(e) => setIssueType(e.target.value)}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
-              <Textarea id="description" placeholder="Describe the problem in detail..." />
+              <Textarea 
+                id="description" 
+                placeholder="Describe the problem in detail..." 
+                value={issueDescription}
+                onChange={(e) => setIssueDescription(e.target.value)}
+              />
             </div>
           </div>
           <DialogFooter>

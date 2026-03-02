@@ -32,6 +32,13 @@ const PatientProfile = () => {
 
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({});
+  const buildAvatarUrl = (path) => {
+    if (!path) return null;
+    const p = String(path);
+    if (p.startsWith("http")) return p;
+    if (p.startsWith("/media/")) return `http://127.0.0.1:8000${p}`;
+    return `http://127.0.0.1:8000/media/${p}`;
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -50,6 +57,7 @@ const PatientProfile = () => {
           chronicDiseases: data.chronic_diseases || "",
           pastDiseases: data.past_diseases || "",
           familyHistory: data.family_history || "",
+          avatar: data.avatar || null,
         });
       } catch (e) {
         // ignore
@@ -67,15 +75,17 @@ const PatientProfile = () => {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleImageUpload = (e) => {
+  const handleImageUpload = async (e) => {
     const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, avatar: reader.result }));
-        toast.success(t('profile.toast.imageUpdated'));
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+    try {
+      const updated = await profileService.avatar.upload(file);
+      setFormData(prev => ({ ...prev, avatar: updated.avatar }));
+      toast.success(t('profile.toast.imageUpdated'));
+    } catch {
+      toast.error(t('common.error'));
+    } finally {
+      e.target.value = "";
     }
   };
 
@@ -129,7 +139,7 @@ const PatientProfile = () => {
           <div className="relative group">
             <div className="w-32 h-32 rounded-full bg-secondary flex items-center justify-center overflow-hidden border-4 border-background shadow-xl">
               {formData.avatar ? (
-                <img src={formData.avatar} alt="Profile" className="w-full h-full object-cover" />
+                <img src={buildAvatarUrl(formData.avatar)} alt="Profile" className="w-full h-full object-cover" />
               ) : (
                 <User className="w-16 h-16 text-muted-foreground" />
               )}

@@ -28,7 +28,7 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const user = await login(username, password);
+      const user = await login(username.trim(), password);
       toast.success(`Welcome back, ${user.username}!`);
       
       // Navigate based on user role from backend

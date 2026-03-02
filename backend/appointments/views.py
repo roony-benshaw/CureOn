@@ -6,9 +6,19 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.contrib.auth import get_user_model
-from .models import Appointment, DoctorAvailability, Prescription, LabTestRequest
-from .serializers import AppointmentSerializer, DoctorAvailabilitySerializer, PrescriptionSerializer, LabTestRequestSerializer
-from accounts.permissions import IsPatient, IsDoctor, IsAdmin, IsPharmacy, IsLab
+from .models import Appointment, DoctorAvailability, Prescription, LabTestRequest, LabTestRecord
+try:
+    from pharmacy.models import InventoryItem, Transaction, PharmacyOrder
+except Exception:
+    InventoryItem = None
+    Transaction = None
+    PharmacyOrder = None
+from .serializers import AppointmentSerializer, DoctorAvailabilitySerializer, PrescriptionSerializer, LabTestRequestSerializer, LabTestRecordSerializer
+from accounts.permissions import IsPatient, IsDoctor, IsAdmin, IsPharmacy, IsLab, IsLabOrAdmin
+from django.http import StreamingHttpResponse, FileResponse, HttpResponse
+import csv
+from io import StringIO, BytesIO
+from datetime import datetime
 
 User = get_user_model()
 
@@ -217,10 +227,15 @@ class DoctorPatientsListView(APIView):
                     "last_visit": last_visit.isoformat(),
                     "total_visits": 1,
                     "condition": None,
+                    "avatar": (str(getattr(p, "avatar", "")) or None),
                 }
             else:
                 entry["total_visits"] += 1
-                if last_visit > datetime.fromisoformat(entry["last_visit"]).date():
+                try:
+                    prev = datetime.strptime(entry["last_visit"], "%Y-%m-%d").date()
+                except ValueError:
+                    prev = datetime.fromisoformat(entry["last_visit"]).date() if "T" in entry["last_visit"] else last_visit
+                if last_visit > prev:
                     entry["last_visit"] = last_visit.isoformat()
         # enrich condition from latest prescription per patient with this doctor
         for pid, entry in by_patient.items():
@@ -250,11 +265,21 @@ class DoctorPatientHistoryView(APIView):
             "age": getattr(prof, "age", None) if prof else None,
             "gender": getattr(prof, "gender", None) if prof else None,
             "last_visit": last_appt.date.isoformat() if last_appt else None,
+            "date_of_birth": getattr(prof, "date_of_birth", None) if prof else None,
+            "blood_type": getattr(prof, "blood_type", None) if prof else None,
+            "height_cm": getattr(prof, "height_cm", None) if prof else None,
+            "weight_kg": getattr(prof, "weight_kg", None) if prof else None,
+            "allergies": getattr(prof, "allergies", None) if prof else None,
+            "chronic_diseases": getattr(prof, "chronic_diseases", None) if prof else None,
+            "address": getattr(prof, "address", None) if prof else None,
+            "avatar": (str(getattr(patient, "avatar", "")) or None),
         }
-        prescs = Prescription.objects.filter(patient=patient, doctor=request.user).order_by("-created_at")
-        labs = LabTestRequest.objects.filter(patient=patient, doctor=request.user).order_by("-created_at")
+        appointments = Appointment.objects.filter(patient=patient).order_by("-date", "time_slot")
+        prescs = Prescription.objects.filter(patient=patient).order_by("-created_at")
+        labs = LabTestRequest.objects.filter(patient=patient).order_by("-created_at")
         return Response({
             "patient": patient_info,
+            "appointments": AppointmentSerializer(appointments, many=True).data,
             "prescriptions": PrescriptionSerializer(prescs, many=True).data,
             "lab_results": LabTestRequestSerializer(labs, many=True).data,
         })
@@ -385,6 +410,28 @@ class DoctorCreatePrescriptionView(APIView):
         serializer = PrescriptionSerializer(data=data)
         serializer.is_valid(raise_exception=True)
         presc = serializer.save(patient=appt.patient, doctor=request.user, appointment=appt)
+        # Auto-create pharmacy orders based on inventory ownership
+        try:
+            from pharmacy.models import InventoryItem
+            from django.contrib.auth import get_user_model
+            from pharmacy.services import create_order_from_prescription
+            User = get_user_model()
+            # find target pharmacies from inventory items by name
+            owners = {}
+            for it in presc.items.all():
+                inv = InventoryItem.objects.filter(name__iexact=it.name).first()
+                owner = getattr(inv, "created_by", None) or getattr(presc, "pharmacy", None)
+                if owner:
+                    owners.setdefault(owner.id, owner)
+            if not owners and getattr(presc, "pharmacy", None):
+                owners[presc.pharmacy.id] = presc.pharmacy
+            for _, pharm in owners.items():
+                try:
+                    create_order_from_prescription(presc, pharm, request.user)
+                except Exception:
+                    continue
+        except Exception:
+            pass
         return Response(PrescriptionSerializer(presc).data, status=201)
 
 class PatientPrescriptionsView(APIView):
@@ -414,6 +461,49 @@ class PharmacyUpdatePrescriptionStatusView(APIView):
         if new_status == Prescription.PharmacyStatus.COMPLETED:
             presc.status = Prescription.Status.COMPLETED
         presc.save(update_fields=["pharmacy_status", "status", "updated_at"])
+        # Hook: create SALE transactions when order is completed
+        if (
+            new_status == Prescription.PharmacyStatus.COMPLETED
+            and Transaction is not None
+            and InventoryItem is not None
+        ):
+            try:
+                # Skip if PharmacyOrder exists for this prescription (handled by order completion)
+                if PharmacyOrder is not None and PharmacyOrder.objects.filter(prescription_id=presc.id, status__in=["PENDING", "ACCEPTED", "COMPLETED"]).exists():
+                    return Response(PrescriptionSerializer(presc).data)
+                # Idempotency: if we already created transactions for this order, skip
+                existing = Transaction.objects.filter(details__icontains=f"Order #{presc.id}", type=Transaction.Type.SALE).exists()
+                if not existing:
+                    for it in presc.items.all():
+                        try:
+                            inv = InventoryItem.objects.filter(name__iexact=it.name).first()
+                        except Exception:
+                            inv = None
+                        qty = int(it.quantity or 0)
+                        amt = float((it.unit_price or 0) * (it.quantity or 0))
+                        if inv and qty > 0:
+                            Transaction.objects.create(
+                                type=Transaction.Type.SALE,
+                                details=f"Order #{presc.id} - {it.name}",
+                                amount=amt,
+                                status=Transaction.Status.COMPLETED,
+                                user=request.user,
+                                item=inv,
+                                quantity=qty,
+                            )
+                    # If no items matched inventory, create an aggregate sale record without stock impact
+                    # This keeps financials visible even if names don't match
+                    if not Transaction.objects.filter(details__icontains=f"Order #{presc.id}", type=Transaction.Type.SALE).exists() and presc.total_amount:
+                        Transaction.objects.create(
+                            type=Transaction.Type.SALE,
+                            details=f"Order #{presc.id} - Prescription Sale",
+                            amount=float(presc.total_amount or 0),
+                            status=Transaction.Status.COMPLETED,
+                            user=request.user,
+                        )
+            except Exception:
+                # Do not block status update if transaction creation fails
+                pass
         return Response(PrescriptionSerializer(presc).data)
 
 class PharmacyUpdatePrescriptionBillView(APIView):
@@ -488,7 +578,11 @@ class LabRequestsView(APIView):
 class PatientLabResultsView(APIView):
     permission_classes = [IsPatient]
     def get(self, request):
-        qs = LabTestRequest.objects.filter(patient=request.user, status=LabTestRequest.Status.COMPLETED).order_by("-created_at")
+        qs = LabTestRequest.objects.filter(
+            patient=request.user,
+            status=LabTestRequest.Status.COMPLETED,
+            doctor__role=User.Role.DOCTOR
+        ).order_by("-created_at")
         return Response(LabTestRequestSerializer(qs, many=True).data)
 
 class LabUpdateRequestStatusView(APIView):
@@ -515,4 +609,371 @@ class LabSubmitResultView(APIView):
             req.attachment = file
         req.status = LabTestRequest.Status.COMPLETED
         req.save()
+        try:
+            # Create history record if not exists
+            if not hasattr(req, "record"):
+                summary = "NORMAL"
+                notes = (req.clinical_notes or "").lower()
+                if "infection" in notes:
+                    summary = "INFECTION_DETECTED"
+                elif (req.result_value or "").strip().lower() not in ["", "normal"]:
+                    summary = "ABNORMAL"
+                LabTestRecord.objects.create(
+                    request=req,
+                    test_id=f"LAB-{req.id:03d}",
+                    date=req.created_at.date(),
+                    patient=req.patient,
+                    doctor=req.doctor,
+                    lab=req.lab,
+                    test_type=", ".join(req.tests) if isinstance(req.tests, list) else str(req.tests),
+                    result_summary=summary,
+                    result_details=req.clinical_notes or "",
+                    attachment=req.attachment,
+                )
+        except Exception:
+            pass
         return Response(LabTestRequestSerializer(req).data)
+
+class DoctorUploadLabResultView(APIView):
+    permission_classes = [IsDoctor]
+    def post(self, request, pk):
+        req = get_object_or_404(LabTestRequest, pk=pk, doctor=request.user)
+        req.result_value = request.data.get("result_value") or ""
+        req.reference_range = request.data.get("reference_range") or ""
+        notes = request.data.get("clinical_notes") or ""
+        report_name = request.data.get("report_name") or ""
+        tags = []
+        if report_name:
+            tags.append(f"[REPORT_NAME:{report_name}]")
+        tags.append("[UPLOADED_BY_DOCTOR]")
+        req.clinical_notes = ("\n".join([notes] + tags)).strip()
+        file = request.FILES.get("attachment")
+        if not file:
+            return Response({"detail": "attachment required"}, status=400)
+        req.attachment = file
+        req.status = LabTestRequest.Status.COMPLETED
+        # keep lab unchanged; uploaded_by inferred in serializer by presence of lab
+        req.save()
+        try:
+            if not hasattr(req, "record"):
+                summary = "NORMAL"
+                notes_l = (req.clinical_notes or "").lower()
+                if "infection" in notes_l:
+                    summary = "INFECTION_DETECTED"
+                elif (req.result_value or "").strip().lower() not in ["", "normal"]:
+                    summary = "ABNORMAL"
+                LabTestRecord.objects.create(
+                    request=req,
+                    test_id=f"LAB-{req.id:03d}",
+                    date=req.created_at.date(),
+                    patient=req.patient,
+                    doctor=req.doctor,
+                    lab=req.lab,
+                    test_type=", ".join(req.tests) if isinstance(req.tests, list) else str(req.tests),
+                    result_summary=summary,
+                    result_details=req.clinical_notes or "",
+                    attachment=req.attachment,
+                )
+        except Exception:
+            pass
+        return Response(LabTestRequestSerializer(req).data)
+
+class DoctorUploadAdhocReportView(APIView):
+    permission_classes = [IsDoctor]
+    def post(self, request, patient_id):
+        try:
+            patient = User.objects.get(id=patient_id, role="PATIENT")
+        except User.DoesNotExist:
+            return Response({"detail": "Patient not found"}, status=404)
+        file = request.FILES.get("attachment")
+        if not file:
+            return Response({"detail": "attachment required"}, status=400)
+        # Use latest appointment; if none, create a synthetic completed appointment now
+        appt = Appointment.objects.filter(doctor=request.user, patient=patient).order_by("-date", "-time_slot").first()
+        if not appt:
+            now = timezone.localtime()
+            appt = Appointment.objects.create(
+                patient=patient,
+                doctor=request.user,
+                date=now.date(),
+                time_slot=now.time().replace(microsecond=0),
+                status=Appointment.Status.COMPLETED,
+                visit_type=Appointment.VisitType.VIDEO_CALL,
+            )
+        report_name = request.data.get("report_name") or "Uploaded Report"
+        notes = request.data.get("clinical_notes") or ""
+        result_value = request.data.get("result_value") or ""
+        reference_range = request.data.get("reference_range") or ""
+        obj = LabTestRequest.objects.create(
+            appointment=appt,
+            patient=patient,
+            doctor=request.user,
+            lab=None,
+            tests=[report_name],
+            notes="",
+            status=LabTestRequest.Status.COMPLETED,
+            priority=LabTestRequest.Priority.ROUTINE,
+            result_value=result_value,
+            reference_range=reference_range,
+            clinical_notes=(notes + f"\n[REPORT_NAME:{report_name}]\n[UPLOADED_BY_DOCTOR]").strip(),
+            attachment=file,
+        )
+        return Response(LabTestRequestSerializer(obj).data, status=201)
+
+class PatientUploadsView(APIView):
+    permission_classes = [IsPatient]
+    def get(self, request):
+        qs = LabTestRequest.objects.filter(patient=request.user, doctor=request.user).order_by("-created_at")
+        return Response(LabTestRequestSerializer(qs, many=True).data)
+    def post(self, request):
+        file = request.FILES.get("attachment")
+        if not file:
+            return Response({"detail": "attachment required"}, status=400)
+        report_name = request.data.get("report_name") or "Uploaded Document"
+        notes = request.data.get("clinical_notes") or ""
+        result_value = request.data.get("result_value") or ""
+        reference_range = request.data.get("reference_range") or ""
+        appt = Appointment.objects.filter(patient=request.user).order_by("-date", "-time_slot").first()
+        if not appt:
+            now = timezone.localtime()
+            appt = Appointment.objects.create(
+                patient=request.user,
+                doctor=request.user,
+                date=now.date(),
+                time_slot=now.time().replace(microsecond=0),
+                status=Appointment.Status.COMPLETED,
+                visit_type=Appointment.VisitType.VIDEO_CALL,
+            )
+        obj = LabTestRequest.objects.create(
+            appointment=appt,
+            patient=request.user,
+            doctor=request.user,
+            lab=None,
+            tests=[report_name],
+            notes="",
+            status=LabTestRequest.Status.COMPLETED,
+            priority=LabTestRequest.Priority.ROUTINE,
+            result_value=result_value,
+            reference_range=reference_range,
+            clinical_notes=(notes + f"\n[REPORT_NAME:{report_name}]").strip(),
+            attachment=file,
+        )
+        try:
+            summary = "NORMAL"
+            notes_l = (obj.clinical_notes or "").lower()
+            if "infection" in notes_l:
+                summary = "INFECTION_DETECTED"
+            elif (obj.result_value or "").strip().lower() not in ["", "normal"]:
+                summary = "ABNORMAL"
+            LabTestRecord.objects.create(
+                request=obj,
+                test_id=f"LAB-{obj.id:03d}",
+                date=obj.created_at.date(),
+                patient=obj.patient,
+                doctor=obj.doctor,
+                lab=obj.lab,
+                test_type=", ".join(obj.tests) if isinstance(obj.tests, list) else str(obj.tests),
+                result_summary=summary,
+                result_details=obj.clinical_notes or "",
+                attachment=obj.attachment,
+            )
+        except Exception:
+            pass
+        return Response(LabTestRequestSerializer(obj).data, status=201)
+
+
+class LabHistoryListView(APIView):
+    permission_classes = [IsLabOrAdmin]
+    def get(self, request):
+        q = request.GET.get("q", "").strip()
+        statuses = request.GET.get("status")
+        start_date = request.GET.get("start_date")
+        end_date = request.GET.get("end_date")
+        qs = LabTestRecord.objects.all().order_by("-date", "-created_at")
+        if request.user.role == "LAB":
+            qs = qs.filter(lab=request.user)
+        if q:
+            qs = qs.filter(
+                Q(patient__username__icontains=q)
+                | Q(test_type__icontains=q)
+                | Q(test_id__icontains=q)
+            )
+        if statuses:
+            arr = [s.strip().upper() for s in statuses.split(",") if s.strip()]
+            qs = qs.filter(result_summary__in=arr)
+        if start_date:
+            try:
+                sd = datetime.strptime(start_date, "%Y-%m-%d").date()
+                qs = qs.filter(date__gte=sd)
+            except Exception:
+                pass
+        if end_date:
+            try:
+                ed = datetime.strptime(end_date, "%Y-%m-%d").date()
+                qs = qs.filter(date__lte=ed)
+            except Exception:
+                pass
+        return Response(LabTestRecordSerializer(qs, many=True).data)
+
+
+class LabRecordDetailView(APIView):
+    permission_classes = [IsLabOrAdmin]
+    def get(self, request, pk):
+        if request.user.role == "LAB":
+            obj = get_object_or_404(LabTestRecord, pk=pk, lab=request.user)
+        else:
+            obj = get_object_or_404(LabTestRecord, pk=pk)
+        return Response(LabTestRecordSerializer(obj).data)
+
+
+class LabHistoryExportCSVView(APIView):
+    permission_classes = [IsLabOrAdmin]
+    def get(self, request):
+        q = request.GET.get("q", "").strip()
+        statuses = request.GET.get("status")
+        start_date = request.GET.get("start_date")
+        end_date = request.GET.get("end_date")
+        qs = LabTestRecord.objects.all().order_by("-date", "-created_at")
+        if request.user.role == "LAB":
+            qs = qs.filter(lab=request.user)
+        if q:
+            qs = qs.filter(
+                Q(patient__username__icontains=q)
+                | Q(test_type__icontains=q)
+                | Q(test_id__icontains=q)
+            )
+        if statuses:
+            arr = [s.strip().upper() for s in statuses.split(",") if s.strip()]
+            qs = qs.filter(result_summary__in=arr)
+        if start_date:
+            try:
+                sd = datetime.strptime(start_date, "%Y-%m-%d").date()
+                qs = qs.filter(date__gte=sd)
+            except Exception:
+                pass
+        if end_date:
+            try:
+                ed = datetime.strptime(end_date, "%Y-%m-%d").date()
+                qs = qs.filter(date__lte=ed)
+            except Exception:
+                pass
+        def row_iter():
+            buffer = StringIO()
+            writer = csv.writer(buffer)
+            writer.writerow(["Test ID", "Date", "Patient", "Test Type", "Doctor", "Result Summary"])
+            yield buffer.getvalue()
+            buffer.seek(0); buffer.truncate(0)
+            for r in qs:
+                writer.writerow([
+                    r.test_id,
+                    r.date.isoformat(),
+                    getattr(r.patient, "username", ""),
+                    r.test_type,
+                    getattr(r.doctor, "username", "") if r.doctor else "",
+                    r.get_result_summary_display(),
+                ])
+                yield buffer.getvalue()
+                buffer.seek(0); buffer.truncate(0)
+        resp = StreamingHttpResponse(row_iter(), content_type="text/csv")
+        resp["Content-Disposition"] = 'attachment; filename="lab_history.csv"'
+        return resp
+
+
+class LabRecordPDFView(APIView):
+    permission_classes = [IsLabOrAdmin]
+    def get(self, request, pk):
+        if request.user.role == "LAB":
+            obj = get_object_or_404(LabTestRecord, pk=pk, lab=request.user)
+        else:
+            obj = get_object_or_404(LabTestRecord, pk=pk)
+        if obj.attachment and str(obj.attachment).lower().endswith(".pdf"):
+            return FileResponse(obj.attachment.open("rb"), as_attachment=True, filename=f"{obj.test_id}.pdf")
+        try:
+            from reportlab.pdfgen import canvas
+            buffer = BytesIO()
+            p = canvas.Canvas(buffer)
+            p.setFont("Helvetica", 12)
+            y = 800
+            for line in [
+                f"Test Record Details - {obj.test_id}",
+                f"Date: {obj.date.isoformat()}",
+                f"Patient: {getattr(obj.patient, 'username', '')}",
+                f"Doctor: {getattr(obj.doctor, 'username', '') if obj.doctor else ''}",
+                f"Lab: {getattr(obj.lab, 'username', '') if obj.lab else ''}",
+                f"Test: {obj.test_type}",
+                f"Result: {obj.get_result_summary_display()}",
+                "",
+                "Details:",
+            ] + (obj.result_details or "").splitlines():
+                p.drawString(50, y, line[:100])
+                y -= 20
+                if y < 50:
+                    p.showPage()
+                    y = 800
+            p.showPage()
+            p.save()
+            buffer.seek(0)
+            return FileResponse(buffer, as_attachment=True, filename=f"{obj.test_id}.pdf")
+        except Exception:
+            # Minimal PDF fallback
+            content = f"Test Record Details - {obj.test_id}\\nDate: {obj.date.isoformat()}\\nPatient: {getattr(obj.patient, 'username', '')}\\nDoctor: {getattr(obj.doctor, 'username', '') if obj.doctor else ''}\\nLab: {getattr(obj.lab, 'username', '') if obj.lab else ''}\\nTest: {obj.test_type}\\nResult: {obj.get_result_summary_display()}\\n\\n{obj.result_details}"
+            pdf_bytes = _simple_pdf_bytes(content)
+            return HttpResponse(pdf_bytes, content_type="application/pdf")
+
+
+def _simple_pdf_bytes(text):
+    header = b"%PDF-1.4\\n"
+    obj1 = b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\\n"
+    obj2 = b"2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj\\n"
+    # Basic single-page content
+    stream = f"BT /F1 12 Tf 50 750 Td ({text.replace('(', '[').replace(')', ']')}) Tj ET".encode("latin-1", "ignore")
+    obj3 = f"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\\n".encode()
+    obj4 = b"4 0 obj<</Length %d>>stream\\n" % len(stream) + stream + b"\\nendstream endobj\\n"
+    obj5 = b"5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\\n"
+    xref = b"xref\\n0 6\\n0000000000 65535 f \\n"
+    parts = [header, obj1, obj2, obj3, obj4, obj5]
+    offsets = []
+    pos = len(header)
+    for part in parts[1:]:
+        offsets.append(pos)
+        pos += len(part)
+    xref += b"%010d 00000 n \\n" % 0
+    for o in offsets:
+        xref += b"%010d 00000 n \\n" % o
+    trailer = b"trailer<</Size 6/Root 1 0 R>>\\nstartxref\\n" + str(pos).encode() + b"\\n%%EOF"
+    return b"".join(parts + [xref, trailer])
+
+
+class LabHistoryBackfillView(APIView):
+    permission_classes = [IsLabOrAdmin]
+    def post(self, request):
+        qs = LabTestRequest.objects.filter(status=LabTestRequest.Status.COMPLETED)
+        if request.user.role == "LAB":
+            qs = qs.filter(lab=request.user)
+        created = 0
+        for req in qs:
+            if hasattr(req, "record"):
+                continue
+            try:
+                summary = "NORMAL"
+                notes_l = (req.clinical_notes or "").lower()
+                if "infection" in notes_l:
+                    summary = "INFECTION_DETECTED"
+                elif (req.result_value or "").strip().lower() not in ["", "normal"]:
+                    summary = "ABNORMAL"
+                LabTestRecord.objects.create(
+                    request=req,
+                    test_id=f"LAB-{req.id:03d}",
+                    date=req.created_at.date(),
+                    patient=req.patient,
+                    doctor=req.doctor,
+                    lab=req.lab,
+                    test_type=", ".join(req.tests) if isinstance(req.tests, list) else str(req.tests),
+                    result_summary=summary,
+                    result_details=req.clinical_notes or "",
+                    attachment=req.attachment,
+                )
+                created += 1
+            except Exception:
+                continue
+        return Response({"created": created})

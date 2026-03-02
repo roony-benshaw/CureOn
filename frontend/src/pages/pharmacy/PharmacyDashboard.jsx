@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import StatCard from "@/components/dashboard/StatCard";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { pharmacyService } from "@/services/api";
 import {
   LayoutDashboard,
   Pill,
@@ -32,64 +33,88 @@ const PharmacyDashboard = () => {
   // const user = getUser("pharmacy");
   const navigate = useNavigate();
 
-  const handleReorder = (itemName) => {
-    toast.success(`Reorder request for ${itemName} sent to supplier`);
+  const [loading, setLoading] = useState(true);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [processedToday, setProcessedToday] = useState(0);
+  const [lowStockCount, setLowStockCount] = useState(0);
+  const [totalRevenue, setTotalRevenue] = useState(0);
+  const [recentOrders, setRecentOrders] = useState([]);
+  const [lowStockItems, setLowStockItems] = useState([]);
+
+  const formatINR = (value) => {
+    try {
+      return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(Number(value || 0));
+    } catch {
+      return `₹${Number(value || 0).toFixed(2)}`;
+    }
   };
 
-  // Mock data for pharmacy stats
-  const stats = [
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const today = new Date();
+        // parallel calls
+        const [pending, completed, stats, recent, lowstock] = await Promise.all([
+          pharmacyService.orders.list({ status: "PENDING" }),
+          pharmacyService.orders.list({ status: "COMPLETED" }),
+          pharmacyService.inventory.stats(),
+          pharmacyService.orders.list({}),
+          pharmacyService.inventory.list({ low_stock: true }),
+        ]);
+        setPendingCount((pending || []).length);
+        const completedToday = (completed || []).filter(o => {
+          const d = new Date(o.updated_at || o.created_at);
+          return d.toDateString() === today.toDateString();
+        });
+        setProcessedToday(completedToday.length);
+        const revenueToday = completedToday.reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
+        setTotalRevenue(revenueToday);
+        setLowStockCount(Number(stats?.low_stock || 0));
+        const recentMap = (recent || []).slice(0, 3).map(o => ({
+          id: o.id,
+          patient: o.patient_name,
+          items: (o.items || []).map(i => i.name),
+          status: o.status,
+          time: new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        }));
+        setRecentOrders(recentMap);
+        setLowStockItems((lowstock || []).slice(0, 3));
+      } catch (e) {
+        toast.error("Failed to load dashboard");
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const stats = useMemo(() => ([
     {
       title: "Pending Orders",
-      value: "12",
+      value: String(pendingCount),
       icon: Clock,
       description: "Requires immediate attention",
     },
     {
       title: "Processed Today",
-      value: "45",
+      value: String(processedToday),
       icon: CheckCircle2,
       description: "Orders completed",
     },
     {
       title: "Low Stock Items",
-      value: "8",
+      value: String(lowStockCount),
       icon: AlertCircle,
       description: "Reorder required",
     },
     {
       title: "Total Revenue",
-      value: "$2,850",
+      value: formatINR(totalRevenue),
       icon: TrendingUp,
-      description: "Daily earnings",
+      description: "Today",
     },
-  ];
-
-  const recentOrders = [
-    {
-      id: "ORD-001",
-      patient: "Emily Rodriguez",
-      doctor: "Dr. Sarah Johnson",
-      items: ["Amoxicillin 500mg", "Paracetamol"],
-      status: "Pending",
-      time: "10:30 AM",
-    },
-    {
-      id: "ORD-002",
-      patient: "Michael Chang",
-      doctor: "Dr. James Wilson",
-      items: ["Lisinopril 10mg"],
-      status: "Processing",
-      time: "11:15 AM",
-    },
-    {
-      id: "ORD-003",
-      patient: "Robert Smith",
-      doctor: "Dr. Lisa Anderson",
-      items: ["Atorvastatin 20mg", "Metformin 500mg"],
-      status: "Ready",
-      time: "09:45 AM",
-    },
-  ];
+  ]), [pendingCount, processedToday, lowStockCount, totalRevenue]);
 
   return (
     <DashboardLayout navItems={navItems} userType="pharmacy">
@@ -136,13 +161,13 @@ const PharmacyDashboard = () => {
                   >
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
-                        {order.patient.charAt(0)}
+                        {(order.patient || "?").charAt(0)}
                       </div>
-                      <div>
-                        <h3 className="font-medium text-foreground">
-                          {order.patient}
+                      <div className="min-w-0">
+                        <h3 className="font-medium text-foreground truncate">
+                          {order.patient || "Unknown"}
                         </h3>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-sm text-muted-foreground truncate">
                           {order.items.join(", ")}
                         </p>
                       </div>
@@ -150,11 +175,13 @@ const PharmacyDashboard = () => {
                     <div className="text-right">
                       <span
                         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          order.status === "Pending"
+                          order.status === "PENDING"
                             ? "bg-yellow-100 text-yellow-800"
-                            : order.status === "Processing"
+                            : order.status === "PROCESSING"
                             ? "bg-blue-100 text-blue-800"
-                            : "bg-green-100 text-green-800"
+                            : order.status === "READY"
+                            ? "bg-green-100 text-green-800"
+                            : "bg-gray-100 text-gray-800"
                         }`}
                       >
                         {order.status}
@@ -165,6 +192,9 @@ const PharmacyDashboard = () => {
                     </div>
                   </div>
                 ))}
+                {recentOrders.length === 0 && (
+                  <div className="text-sm text-muted-foreground text-center py-6">No recent orders</div>
+                )}
               </div>
             </div>
           </div>
@@ -176,26 +206,23 @@ const PharmacyDashboard = () => {
             </div>
             <div className="p-6">
               <div className="space-y-4">
-                {[
-                  { name: "Amoxicillin 500mg", stock: 15, status: "Critical" },
-                  { name: "Ibuprofen 400mg", stock: 42, status: "Low" },
-                  { name: "Cetirizine 10mg", stock: 28, status: "Low" },
-                ].map((item, i) => (
+                {lowStockItems.map((item, i) => (
                   <div key={i} className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <AlertCircle className="w-5 h-5 text-destructive" />
-                      <div>
-                        <p className="font-medium text-sm">{item.name}</p>
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm truncate">{item.name}</p>
                         <p className="text-xs text-muted-foreground">
                           Stock: {item.stock} units
                         </p>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm" className="h-8" onClick={() => handleReorder(item.name)}>
-                      Reorder
-                    </Button>
+                    {/* Reorder button intentionally removed */}
                   </div>
                 ))}
+                {lowStockItems.length === 0 && (
+                  <div className="text-sm text-muted-foreground text-center py-6">No low stock alerts</div>
+                )}
               </div>
               <Button variant="secondary" className="w-full mt-6" onClick={() => navigate("/pharmacy/inventory")}>
                 View Full Inventory

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { appointmentsService } from "@/services/api";
 import {
   LayoutDashboard,
   FlaskConical,
@@ -46,73 +47,85 @@ const LabsHistory = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [isDateDialogOpen, setIsDateDialogOpen] = useState(false);
+  const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [statusFilters, setStatusFilters] = useState([]);
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const [historyData] = useState([
-    {
-      id: "LAB-006",
-      patient: "John Doe",
-      test: "Comprehensive Metabolic Panel",
-      doctor: "Dr. Smith",
-      date: "2024-02-01",
-      result: "Normal",
-      status: "Completed",
-      technician: "Lab Tech Mike"
-    },
-    {
-      id: "LAB-007",
-      patient: "Jane Roe",
-      test: "Lipid Profile",
-      doctor: "Dr. Jones",
-      date: "2024-01-31",
-      result: "High Cholesterol",
-      status: "Completed",
-      technician: "Lab Tech Sarah"
-    },
-    {
-      id: "LAB-008",
-      patient: "Bob Brown",
-      test: "CBC",
-      doctor: "Dr. Smith",
-      date: "2024-01-30",
-      result: "Low Hemoglobin",
-      status: "Completed",
-      technician: "Lab Tech Mike"
-    },
-    {
-      id: "LAB-009",
-      patient: "Alice Green",
-      test: "Thyroid Function",
-      doctor: "Dr. White",
-      date: "2024-01-28",
-      result: "Normal",
-      status: "Completed",
-      technician: "Lab Tech Sarah"
-    },
-    {
-      id: "LAB-010",
-      patient: "Charlie Black",
-      test: "Urinalysis",
-      doctor: "Dr. Brown",
-      date: "2024-01-25",
-      result: "Infection Detected",
-      status: "Completed",
-      technician: "Lab Tech Mike"
-    }
-  ]);
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const data = await appointmentsService.lab.history.list({
+          q: searchTerm || undefined,
+          status: statusFilters,
+          start_date: startDate || undefined,
+          end_date: endDate || undefined,
+        });
+        setRecords(data);
+        if ((!searchTerm && statusFilters.length === 0 && !startDate && !endDate) && data.length === 0) {
+          try {
+            const back = await appointmentsService.lab.history.backfill();
+            if (back?.created > 0) {
+              const again = await appointmentsService.lab.history.list();
+              setRecords(again);
+              toast.success(`Imported ${back.created} past results into history`);
+            }
+          } catch {
+            // ignore backfill error
+          }
+        }
+      } catch (e) {
+        toast.error("Failed to load lab history");
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [searchTerm, statusFilters, startDate, endDate]);
 
-  const filteredHistory = historyData.filter(record => 
-    record.patient.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    record.test.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    record.id.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredHistory = useMemo(() => {
+    return records.map(r => ({
+      _id: r.id,
+      id: r.test_id,
+      date: r.date,
+      patient: r.patient_name || r.patient,
+      test: r.test_type,
+      doctor: r.doctor_name || r.doctor,
+      result: r.result_summary === "NORMAL" ? "Normal"
+        : r.result_summary === "INFECTION_DETECTED" ? "Infection Detected"
+        : "Abnormal",
+    }));
+  }, [records]);
 
   const handleViewDetails = (record) => {
     setSelectedRecord(record);
     setIsDetailsOpen(true);
   };
 
-  const handleExport = () => {
-    toast.success("Exporting lab history to CSV...");
+  const handleExport = async () => {
+    try {
+      const blob = await appointmentsService.lab.history.exportCsv({
+        q: searchTerm || undefined,
+        status: statusFilters,
+        start_date: startDate || undefined,
+        end_date: endDate || undefined,
+      });
+      const url = window.URL.createObjectURL(new Blob([blob], { type: "text/csv" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "lab_history.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("CSV exported");
+    } catch {
+      toast.error("Export failed");
+    }
   };
 
   return (
@@ -124,7 +137,7 @@ const LabsHistory = () => {
             <p className="text-muted-foreground mt-1">Archive of completed tests and reports</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline">
+            <Button variant="outline" onClick={() => setIsDateDialogOpen(true)}>
               <Calendar className="w-4 h-4 mr-2" />
               Date Range
             </Button>
@@ -146,7 +159,7 @@ const LabsHistory = () => {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="sm" onClick={() => setIsFilterDialogOpen(true)}>
               <Filter className="w-4 h-4 mr-2" />
               Filter Results
             </Button>
@@ -166,7 +179,7 @@ const LabsHistory = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredHistory.map((record) => (
+                {(loading ? [] : filteredHistory).map((record) => (
                   <TableRow key={record.id}>
                     <TableCell className="font-mono text-xs">{record.id}</TableCell>
                     <TableCell>{record.date}</TableCell>
@@ -223,20 +236,80 @@ const LabsHistory = () => {
                 <span className="font-semibold text-right">Result:</span>
                 <span className="col-span-3 font-bold">{selectedRecord.result}</span>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <span className="font-semibold text-right">Technician:</span>
-                <span className="col-span-3">{selectedRecord.technician}</span>
-              </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDetailsOpen(false)}>Close</Button>
-            <Button onClick={() => {
-              toast.success("Report downloaded");
-              setIsDetailsOpen(false);
+            <Button onClick={async () => {
+              try {
+                const blob = await appointmentsService.lab.history.downloadPdf(selectedRecord._id);
+                const url = window.URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${selectedRecord.id}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                setIsDetailsOpen(false);
+              } catch {
+                toast.error("Failed to download PDF");
+              }
             }}>
               Download PDF
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDateDialogOpen} onOpenChange={setIsDateDialogOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Select Date Range</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div>
+              <div className="text-sm mb-1">Start Date</div>
+              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            </div>
+            <div>
+              <div className="text-sm mb-1">End Date</div>
+              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setStartDate(""); setEndDate(""); setIsDateDialogOpen(false); }}>Clear</Button>
+            <Button onClick={() => setIsDateDialogOpen(false)}>Apply</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isFilterDialogOpen} onOpenChange={setIsFilterDialogOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Filter Results</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-2 py-2">
+            {[
+              { key: "NORMAL", label: "Normal" },
+              { key: "ABNORMAL", label: "Abnormal" },
+              { key: "INFECTION_DETECTED", label: "Infection Detected" },
+            ].map(opt => (
+              <label key={opt.key} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={statusFilters.includes(opt.key)}
+                  onChange={(e) => {
+                    setStatusFilters(prev => e.target.checked ? [...prev, opt.key] : prev.filter(s => s !== opt.key));
+                  }}
+                />
+                <span>{opt.label}</span>
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStatusFilters([])}>Clear</Button>
+            <Button onClick={() => setIsFilterDialogOpen(false)}>Apply</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

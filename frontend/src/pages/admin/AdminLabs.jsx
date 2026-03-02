@@ -52,6 +52,7 @@ const AdminLabs = () => {
   const [editLabModalOpen, setEditLabModalOpen] = useState(false);
   const [editingLab, setEditingLab] = useState(null);
   const [labs, setLabs] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const loadLabs = async () => {
     try {
@@ -134,11 +135,25 @@ const AdminLabs = () => {
 
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search labs..." className="pl-10" />
+          <Input
+            placeholder="Search labs..."
+            className="pl-10"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {labs.map((lab) => (
+          {(searchTerm ? labs.filter(l => {
+            const q = searchTerm.trim().toLowerCase();
+            return (
+              l.name.toLowerCase().includes(q) ||
+              l.license.toLowerCase().includes(q) ||
+              l.email.toLowerCase().includes(q) ||
+              l.phone.toLowerCase().includes(q) ||
+              String(l.address || "").toLowerCase().includes(q)
+            );
+          }) : labs).map((lab) => (
             <div 
               key={lab.id} 
               className="dashboard-card relative hover:shadow-lg transition-all group"

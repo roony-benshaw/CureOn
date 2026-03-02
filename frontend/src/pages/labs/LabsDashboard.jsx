@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import StatCard from "@/components/dashboard/StatCard";
 import { Button } from "@/components/ui/button";
+import { appointmentsService, equipmentService } from "@/services/api";
 import {
   LayoutDashboard,
   FlaskConical,
@@ -31,69 +32,95 @@ const navItems = [
 const LabsDashboard = () => {
   const { user } = useUser();
   const navigate = useNavigate();
-  // const user = getUser("labs");
+  const [requests, setRequests] = useState([]);
+  const [equipments, setEquipments] = useState([]);
+  const [criticalCount, setCriticalCount] = useState(0);
+  const [loading, setLoading] = useState(true);
 
-  // Mock data for lab stats
-  const stats = [
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const [reqs, eq, critical] = await Promise.all([
+          appointmentsService.lab.listRequests(),
+          equipmentService.list(),
+          appointmentsService.lab.history.list({ status: ["ABNORMAL", "INFECTION_DETECTED"] }),
+        ]);
+        setRequests(reqs || []);
+        setEquipments(eq || []);
+        setCriticalCount((critical || []).length);
+      } catch (e) {
+        // keep empty on error
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const pendingCount = useMemo(
+    () => requests.filter(r => ["PENDING", "IN_PROGRESS"].includes(r.status)).length,
+    [requests]
+  );
+  const completedToday = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return requests.filter(r => r.status === "COMPLETED" && (r.updated_at || r.created_at || "").slice(0,10) === today).length;
+  }, [requests]);
+  const avgTurnaroundHours = useMemo(() => {
+    const completed = requests.filter(r => r.status === "COMPLETED");
+    if (!completed.length) return "—";
+    const durations = completed.slice(0, 50).map(r => {
+      const start = new Date(r.created_at);
+      const end = new Date(r.updated_at || r.created_at);
+      return Math.max(0, (end - start) / 36e5);
+    });
+    const avg = durations.reduce((a,b)=>a+b,0) / durations.length;
+    return `${avg.toFixed(1)}h`;
+  }, [requests]);
+  const stats = useMemo(() => ([
     {
       title: "Pending Tests",
-      value: "18",
+      value: String(pendingCount),
       icon: TestTube2,
       description: "Awaiting analysis",
       path: "/labs/requests"
     },
     {
       title: "Completed Today",
-      value: "32",
+      value: String(completedToday),
       icon: CheckCircle2,
       description: "Reports generated",
       path: "/labs/history"
     },
     {
       title: "Critical Results",
-      value: "3",
+      value: String(criticalCount || 0),
       icon: Activity,
-      description: "Immediate action needed",
-      path: "/labs/results"
+      description: "Flagged results",
+      path: "/labs/history"
     },
     {
       title: "Avg Turnaround",
-      value: "4.5h",
+      value: avgTurnaroundHours,
       icon: Clock,
       description: "Time to report",
       path: "/labs/history"
     },
-  ];
+  ]), [pendingCount, completedToday, avgTurnaroundHours]);
 
-  const recentRequests = [
-    {
-      id: "LAB-001",
-      patient: "Emily Rodriguez",
-      doctor: "Dr. Sarah Johnson",
-      tests: ["CBC", "Lipid Profile"],
-      priority: "Routine",
-      status: "In Progress",
-      time: "09:15 AM",
-    },
-    {
-      id: "LAB-002",
-      patient: "David Chen",
-      doctor: "Dr. Michael Chang",
-      tests: ["Thyroid Function"],
-      priority: "Urgent",
-      status: "Pending",
-      time: "10:00 AM",
-    },
-    {
-      id: "LAB-003",
-      patient: "Sarah Williams",
-      doctor: "Dr. Lisa Anderson",
-      tests: ["Urinalysis"],
-      priority: "Routine",
-      status: "Completed",
-      time: "08:30 AM",
-    },
-  ];
+  const recentRequests = useMemo(() => {
+    return (requests || []).slice(0, 5).map(r => ({
+      id: r.id,
+      patient: r.patient_name || r.patient,
+      doctor: r.doctor_name || r.doctor,
+      tests: Array.isArray(r.tests) ? r.tests : [],
+      priority: r.priority === "URGENT" ? "Urgent" : "Routine",
+      status:
+        r.status === "PENDING" ? "Pending" :
+        r.status === "IN_PROGRESS" ? "In Progress" : "Completed",
+      time: new Date(r.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    }));
+  }, [requests]);
 
   return (
     <DashboardLayout navItems={navItems} userType="labs">
@@ -146,7 +173,7 @@ const LabsDashboard = () => {
                   >
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
-                        {req.patient.charAt(0)}
+                        {req.patient ? req.patient.charAt(0) : "?"}
                       </div>
                       <div>
                         <h3 className="font-medium text-foreground">
@@ -203,22 +230,29 @@ const LabsDashboard = () => {
             </div>
             <div className="p-6">
               <div className="space-y-4">
-                {[
-                  { name: "Hematology Analyzer", status: "Operational", color: "text-green-600" },
-                  { name: "Centrifuge A", status: "Maintenance", color: "text-yellow-600" },
-                  { name: "Microscope B", status: "Operational", color: "text-green-600" },
-                  { name: "Chemistry Analyzer", status: "Calibrating", color: "text-blue-600" },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center justify-between">
+                {(equipments || []).slice(0,6).map((eq) => {
+                  const map = {
+                    OPERATIONAL: { label: "Operational", color: "text-green-600" },
+                    MAINTENANCE: { label: "Maintenance", color: "text-yellow-600" },
+                    CALIBRATING: { label: "Calibrating", color: "text-blue-600" },
+                    REPORTED: { label: "Reported", color: "text-orange-600" },
+                    BROKEN: { label: "Broken", color: "text-red-600" },
+                  };
+                  const m = map[eq.status] || { label: eq.status, color: "text-muted-foreground" };
+                  return (
+                  <div key={eq.id} className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <Microscope className="w-5 h-5 text-muted-foreground" />
-                      <span className="font-medium text-sm">{item.name}</span>
+                      <span className="font-medium text-sm">{eq.name}</span>
                     </div>
-                    <span className={`text-xs font-medium ${item.color}`}>
-                      {item.status}
+                    <span className={`text-xs font-medium ${m.color}`}>
+                      {m.label}
                     </span>
                   </div>
-                ))}
+                )})}
+                {(!equipments || equipments.length === 0) && (
+                  <div className="text-sm text-muted-foreground">No equipment found</div>
+                )}
               </div>
               <Button variant="outline" className="w-full mt-6" onClick={() => navigate("/labs/equipment")}>
                 Schedule Maintenance

@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { authService } from "@/services/api";
+import { useUser } from "@/context/UserContext";
 import {
   LayoutDashboard,
   FlaskConical,
@@ -29,8 +31,14 @@ const navItems = [
   { name: "Settings", href: "/labs/settings", icon: Settings },
 ];
 
+import { Eye, EyeOff } from "lucide-react";
+
 const LabsSettings = () => {
   const [loading, setLoading] = useState(false);
+  const [password, setPassword] = useState({ current: "", new: "", confirm: "" });
+  const [newUsername, setNewUsername] = useState("");
+  const { refreshUser } = useUser();
+  const [showPwd, setShowPwd] = useState({ current: false, new: false, confirm: false });
 
   const handleSave = () => {
     setLoading(true);
@@ -38,6 +46,25 @@ const LabsSettings = () => {
       setLoading(false);
       toast.success("Settings saved successfully");
     }, 1000);
+  };
+
+  const handleUpdatePassword = async () => {
+    if (!password.current || !password.new || !password.confirm) {
+      toast.error("Please fill in all password fields");
+      return;
+    }
+    if (password.new !== password.confirm) {
+      toast.error("New passwords do not match");
+      return;
+    }
+    try {
+      await authService.changePassword(password.current, password.new);
+      toast.success("Password updated successfully");
+      setPassword({ current: "", new: "", confirm: "" });
+    } catch (e) {
+      const msg = e?.response?.data?.detail || "Failed to update password";
+      toast.error(msg);
+    }
   };
 
   return (
@@ -140,20 +167,54 @@ const LabsSettings = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
+                  <Label htmlFor="new-username">New Username</Label>
+                  <Input id="new-username" type="text" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} />
+                  <Button variant="outline" onClick={async () => {
+                    if (!newUsername.trim()) {
+                      toast.error("Please enter a username");
+                      return;
+                    }
+                    try {
+                      await authService.changeUsername(newUsername.trim());
+                      toast.success("Username updated successfully");
+                      await refreshUser();
+                      setNewUsername("");
+                    } catch (e) {
+                      const msg = e?.response?.data?.detail || "Failed to update username";
+                      toast.error(msg);
+                    }
+                  }}>Update Username</Button>
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="current-password">Current Password</Label>
-                  <Input id="current-password" type="password" />
+                  <div className="relative">
+                    <Input id="current-password" type={showPwd.current ? "text" : "password"} value={password.current} onChange={(e) => setPassword(p => ({ ...p, current: e.target.value }))} />
+                    <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2" onClick={() => setShowPwd(s => ({ ...s, current: !s.current }))}>
+                      {showPwd.current ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="new-password">New Password</Label>
-                  <Input id="new-password" type="password" />
+                  <div className="relative">
+                    <Input id="new-password" type={showPwd.new ? "text" : "password"} value={password.new} onChange={(e) => setPassword(p => ({ ...p, new: e.target.value }))} />
+                    <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2" onClick={() => setShowPwd(s => ({ ...s, new: !s.new }))}>
+                      {showPwd.new ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="confirm-password">Confirm New Password</Label>
-                  <Input id="confirm-password" type="password" />
+                  <div className="relative">
+                    <Input id="confirm-password" type={showPwd.confirm ? "text" : "password"} value={password.confirm} onChange={(e) => setPassword(p => ({ ...p, confirm: e.target.value }))} />
+                    <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2" onClick={() => setShowPwd(s => ({ ...s, confirm: !s.confirm }))}>
+                      {showPwd.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
               <CardFooter>
-                <Button onClick={handleSave} disabled={loading}>
+                <Button onClick={handleUpdatePassword} disabled={loading}>
                   {loading ? "Updating..." : "Update Password"}
                 </Button>
               </CardFooter>

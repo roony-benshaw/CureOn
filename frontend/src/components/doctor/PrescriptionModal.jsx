@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,16 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Trash2, Pill } from "lucide-react";
 import { toast } from "sonner";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { pharmacyService } from "@/services/api";
 
 const PrescriptionModal = ({ open, onOpenChange, appointment, onSubmit }) => {
   const [diagnosis, setDiagnosis] = useState("");
@@ -20,6 +30,8 @@ const PrescriptionModal = ({ open, onOpenChange, appointment, onSubmit }) => {
   ]);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [picker, setPicker] = useState({ open: false, index: null, query: "", results: [], loading: false });
+  const debounceRef = useRef(null);
 
   const handleAddMedicine = () => {
     setMedicines([...medicines, { name: "", dosage: "", frequency: "", duration: "" }]);
@@ -35,6 +47,22 @@ const PrescriptionModal = ({ open, onOpenChange, appointment, onSubmit }) => {
     newMedicines[index][field] = value;
     setMedicines(newMedicines);
   };
+
+  useEffect(() => {
+    if (!picker.open) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await pharmacyService.catalog.list({ q: picker.query });
+        setPicker((p) => ({ ...p, results: res || [] }));
+      } catch {
+        setPicker((p) => ({ ...p, results: [] }));
+      }
+    }, 200);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [picker.open, picker.query]);
 
   const handleSubmit = async () => {
     if (!diagnosis) {
@@ -126,11 +154,46 @@ const PrescriptionModal = ({ open, onOpenChange, appointment, onSubmit }) => {
               <div key={index} className="grid grid-cols-12 gap-2 items-end bg-muted/30 p-3 rounded-lg">
                 <div className="col-span-4 space-y-1">
                   <Label className="text-xs">Medicine Name</Label>
-                  <Input 
-                    placeholder="Name" 
-                    value={medicine.name}
-                    onChange={(e) => handleMedicineChange(index, "name", e.target.value)}
-                  />
+                  <Popover open={picker.open && picker.index === index} onOpenChange={(o)=>setPicker(p=>({ ...p, open:o, index:o?index:null }))}>
+                    <PopoverTrigger asChild>
+                      <Input
+                        placeholder="Search medicine"
+                        value={medicine.name}
+                        onFocus={() => setPicker({ open: true, index, query: medicine.name || "", results: [], loading: false })}
+                        onChange={(e) => {
+                          handleMedicineChange(index, "name", e.target.value);
+                          setPicker((p) => ({ ...p, open: true, index, query: e.target.value }));
+                        }}
+                      />
+                    </PopoverTrigger>
+                    <PopoverContent className="p-0 w-[280px]" align="start">
+                      <Command>
+                        <CommandInput placeholder="Type to search..." value={picker.query} onValueChange={(v)=>setPicker(p=>({ ...p, query:v }))} />
+                        <CommandList>
+                          <CommandEmpty>No medicines found</CommandEmpty>
+                          <CommandGroup>
+                            {(picker.results || []).map((it) => (
+                              <CommandItem
+                                key={it.id}
+                                value={it.name}
+                                onSelect={() => {
+                                  handleMedicineChange(index, "name", it.name);
+                                  setPicker({ open: false, index: null, query: "", results: [], loading: false });
+                                }}
+                              >
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{it.name}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {it.pharmacy_name ? `${it.pharmacy_name} • ` : ""}Stock: {it.stock ?? 0}
+                                  </span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <div className="col-span-3 space-y-1">
                   <Label className="text-xs">Dosage</Label>

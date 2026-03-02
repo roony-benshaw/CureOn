@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
+import { equipmentService } from "@/services/api";
 
 const navItems = [
   { name: "Dashboard", href: "/labs/dashboard", icon: LayoutDashboard },
@@ -47,41 +48,30 @@ const LabsEquipmentIssues = () => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
 
-  const [issues, setIssues] = useState([
-    {
-      id: "ISS-001",
-      equipmentId: "EQ-002",
-      equipmentName: "Centrifuge A",
-      issueType: "Mechanical Failure",
-      description: "Rotor making loud noise during operation",
-      reportedBy: "John Doe",
-      reportedDate: "2024-02-01",
-      priority: "High",
-      status: "Open"
-    },
-    {
-      id: "ISS-002",
-      equipmentId: "EQ-004",
-      equipmentName: "Chemistry Analyzer",
-      issueType: "Calibration Error",
-      description: "Failed daily calibration check",
-      reportedBy: "Jane Smith",
-      reportedDate: "2024-02-02",
-      priority: "Medium",
-      status: "In Progress"
-    },
-    {
-      id: "ISS-003",
-      equipmentId: "EQ-001",
-      equipmentName: "Hematology Analyzer",
-      issueType: "Software Glitch",
-      description: "Screen freezes intermittently",
-      reportedBy: "Mike Johnson",
-      reportedDate: "2024-01-28",
-      priority: "Low",
-      status: "Resolved"
-    }
-  ]);
+  const [issues, setIssues] = useState([]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const data = await equipmentService.list({ status: "REPORTED", search: searchTerm });
+        const mapped = data.map((e) => ({
+          id: e.id,
+          equipmentId: e.asset_id,
+          equipmentName: e.name,
+          issueType: e.issue_type || "—",
+          description: e.issue_description || "—",
+          reportedBy: e.reported_by || null,
+          reportedDate: e.updated_at?.slice(0, 10) || "—",
+          status: "Reported",
+        }));
+        setIssues(mapped);
+      } catch (err) {
+        console.error("Failed to load issues", err);
+        toast.error("Failed to load reported issues");
+      }
+    };
+    load();
+  }, [searchTerm]);
 
   const filteredIssues = issues.filter(issue => 
     issue.equipmentName.toLowerCase().includes(searchTerm.toLowerCase()) ||

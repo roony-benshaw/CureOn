@@ -33,6 +33,13 @@ const DoctorDashboard = () => {
   const [availability, setAvailability] = useState([]);
 
   const mapType = (t) => (t === "IN_PERSON" ? "in-person" : "video");
+  const buildAvatarUrl = (path) => {
+    if (!path) return null;
+    const p = String(path);
+    if (p.startsWith("http")) return p;
+    if (p.startsWith("/media/")) return `http://127.0.0.1:8000${p}`;
+    return `http://127.0.0.1:8000/media/${p}`;
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -68,8 +75,9 @@ const DoctorDashboard = () => {
         time: a.time_slot,
         type: mapType(a.visit_type),
         status: "upcoming",
+        avatar: buildAvatarUrl((patients || []).find((p) => String(p.id) === String(a.patient))?.avatar),
       }));
-  }, [appointments]);
+  }, [appointments, patients]);
 
   const stats = useMemo(() => {
     const todayCount = todayAppointments.length;

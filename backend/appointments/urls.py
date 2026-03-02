@@ -24,7 +24,15 @@ from .views import (
     LabRequestsView,
     LabUpdateRequestStatusView,
     LabSubmitResultView,
+    DoctorUploadLabResultView,
     PatientLabResultsView,
+    DoctorUploadAdhocReportView,
+    PatientUploadsView,
+    LabHistoryListView,
+    LabRecordDetailView,
+    LabHistoryExportCSVView,
+    LabRecordPDFView,
+    LabHistoryBackfillView,
 )
 
 
@@ -58,5 +66,14 @@ urlpatterns = [
     path("lab/requests/", LabRequestsView.as_view(), name="lab_requests"),
     path("lab/requests/<int:pk>/status/", LabUpdateRequestStatusView.as_view(), name="lab_update_request_status"),
     path("lab/requests/<int:pk>/result/", LabSubmitResultView.as_view(), name="lab_submit_result"),
+    path("doctor/lab/requests/<int:pk>/result/", DoctorUploadLabResultView.as_view(), name="doctor_upload_lab_result"),
     path("patient/lab-results/", PatientLabResultsView.as_view(), name="patient_lab_results"),
+    path("doctor/patients/<int:patient_id>/upload-report/", DoctorUploadAdhocReportView.as_view(), name="doctor_upload_adhoc_report"),
+    path("patient/uploads/", PatientUploadsView.as_view(), name="patient_uploads"),
+    # Lab history
+    path("lab/history/", LabHistoryListView.as_view(), name="lab_history"),
+    path("lab/history/export-csv/", LabHistoryExportCSVView.as_view(), name="lab_history_export_csv"),
+    path("lab/history/<int:pk>/", LabRecordDetailView.as_view(), name="lab_record_detail"),
+    path("lab/history/<int:pk>/pdf/", LabRecordPDFView.as_view(), name="lab_record_pdf"),
+    path("lab/history/backfill/", LabHistoryBackfillView.as_view(), name="lab_history_backfill"),
 ]

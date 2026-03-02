@@ -39,6 +39,13 @@ const AdminPatientDetails = () => {
   const navigate = useNavigate();
   const [patient, setPatient] = useState(null);
   const [loading, setLoading] = useState(true);
+  const buildAvatarUrl = (path) => {
+    if (!path) return null;
+    const p = String(path);
+    if (p.startsWith("http")) return p;
+    if (p.startsWith("/media/")) return `http://127.0.0.1:8000${p}`;
+    return `http://127.0.0.1:8000/media/${p}`;
+  };
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -99,8 +106,12 @@ const AdminPatientDetails = () => {
           
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-                <span className="text-primary font-bold text-2xl">{name.charAt(0)}</span>
+              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center overflow-hidden">
+                {patient.avatar ? (
+                  <img src={buildAvatarUrl(patient.avatar)} alt={name} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-primary font-bold text-2xl">{name.charAt(0)}</span>
+                )}
               </div>
               <div>
                 <h1 className="font-display text-2xl lg:text-3xl font-bold text-foreground">{name}</h1>

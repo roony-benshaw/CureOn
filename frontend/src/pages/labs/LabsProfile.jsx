@@ -17,6 +17,7 @@ import {
   Building
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Camera } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { profileService } from "@/services/api";
@@ -34,6 +35,13 @@ const navItems = [
 const LabsProfile = () => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({});
+  const buildAvatarUrl = (path) => {
+    if (!path) return null;
+    const p = String(path);
+    if (p.startsWith("http")) return p;
+    if (p.startsWith("/media/")) return `http://127.0.0.1:8000${p}`;
+    return `http://127.0.0.1:8000/media/${p}`;
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -45,6 +53,7 @@ const LabsProfile = () => {
           phone: data.phone || "",
           address: data.address || "",
           license: data.license_number || "",
+          avatar: data.avatar || null,
         });
       } catch {}
     };
@@ -86,6 +95,20 @@ const LabsProfile = () => {
     }
   };
 
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const updated = await profileService.avatar.upload(file);
+      setFormData(prev => ({ ...prev, avatar: updated.avatar }));
+      toast.success("Profile image updated");
+    } catch {
+      toast.error("Failed to upload image");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
   return (
     <DashboardLayout navItems={navItems} userType="labs">
       <div className="space-y-6 animate-fade-in">
@@ -101,10 +124,16 @@ const LabsProfile = () => {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-center gap-4">
-                <Avatar className="h-20 w-20">
-                  <AvatarImage src="/placeholder-avatar.jpg" alt="Lab" />
-                  <AvatarFallback className="text-xl">LB</AvatarFallback>
-                </Avatar>
+                <div className="relative">
+                  <Avatar className="h-20 w-20">
+                    <AvatarImage src={buildAvatarUrl(formData.avatar) || "/placeholder-avatar.jpg"} alt="Lab" />
+                    <AvatarFallback className="text-xl">LB</AvatarFallback>
+                  </Avatar>
+                  <label className="absolute -bottom-2 -right-2 p-2 bg-primary text-primary-foreground rounded-full cursor-pointer hover:bg-primary/90 transition-colors shadow-lg">
+                    <Camera className="w-4 h-4" />
+                    <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
+                  </label>
+                </div>
                 <div className="space-y-2 w-full">
                   <Label>Lab Name</Label>
                   <Input name="name" value={formData.name || ""} onChange={handleChange} />

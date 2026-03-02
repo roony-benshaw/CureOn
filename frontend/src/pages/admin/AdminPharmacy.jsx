@@ -52,6 +52,7 @@ const AdminPharmacy = () => {
   const [editPharmacyModalOpen, setEditPharmacyModalOpen] = useState(false);
   const [editingPharmacy, setEditingPharmacy] = useState(null);
   const [pharmacies, setPharmacies] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const loadPharmacies = async () => {
     try {
@@ -134,11 +135,25 @@ const AdminPharmacy = () => {
 
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search pharmacies..." className="pl-10" />
+          <Input
+            placeholder="Search pharmacies..."
+            className="pl-10"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {pharmacies.map((pharmacy) => (
+          {(searchTerm ? pharmacies.filter(ph => {
+            const q = searchTerm.trim().toLowerCase();
+            return (
+              ph.name.toLowerCase().includes(q) ||
+              ph.license.toLowerCase().includes(q) ||
+              ph.email.toLowerCase().includes(q) ||
+              ph.phone.toLowerCase().includes(q) ||
+              String(ph.address || "").toLowerCase().includes(q)
+            );
+          }) : pharmacies).map((pharmacy) => (
             <div 
               key={pharmacy.id} 
               className="dashboard-card relative hover:shadow-lg transition-all group"

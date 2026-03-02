@@ -43,6 +43,13 @@ const AdminDoctorDetails = () => {
   const navigate = useNavigate();
   const [doctor, setDoctor] = useState(null);
   const [loading, setLoading] = useState(true);
+  const buildAvatarUrl = (path) => {
+    if (!path) return null;
+    const p = String(path);
+    if (p.startsWith("http")) return p;
+    if (p.startsWith("/media/")) return `http://127.0.0.1:8000${p}`;
+    return `http://127.0.0.1:8000/media/${p}`;
+  };
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -85,8 +92,12 @@ const AdminDoctorDetails = () => {
         {/* Doctor Profile Card */}
         <div className="dashboard-card p-6">
           <div className="flex flex-col md:flex-row gap-6 items-start">
-            <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-              <span className="text-primary font-bold text-3xl">{name.split(" ")[1]?.charAt(0) || name.charAt(0)}</span>
+            <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
+              {doctor.avatar ? (
+                <img src={buildAvatarUrl(doctor.avatar)} alt={name} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-primary font-bold text-3xl">{name.split(" ")[1]?.charAt(0) || name.charAt(0)}</span>
+              )}
             </div>
             
             <div className="flex-1 space-y-4">
